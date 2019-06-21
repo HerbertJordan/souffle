@@ -245,11 +245,13 @@ private:
     std::vector<Relation*> inputRelations;
     std::vector<Relation*> outputRelations;
     std::vector<Relation*> internalRelations;
+    std::vector<Relation*> allRelations;
 
 protected:
     // add relation to relation map
     void addRelation(const std::string& name, Relation* rel, bool isInput, bool isOutput) {
         relationMap[name] = rel;
+        allRelations.push_back(rel);
         if (isInput) {
             inputRelations.push_back(rel);
         }
@@ -306,10 +308,6 @@ public:
     }
 
     std::vector<Relation*> getAllRelations() const {
-        std::vector<Relation*> allRelations;
-        allRelations.insert(allRelations.end(), inputRelations.begin(), inputRelations.end());
-        allRelations.insert(allRelations.end(), internalRelations.begin(), internalRelations.end());
-        allRelations.insert(allRelations.end(), outputRelations.begin(), outputRelations.end());
         return allRelations;
     }
 
