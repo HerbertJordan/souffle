@@ -501,7 +501,7 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
             auto arity = rel.getArity();
             RamDomain low[arity];
             RamDomain hig[arity];
-            auto pattern = scan.getRangePattern();
+            const auto& pattern = scan.getRangePattern();
             for (size_t i = 0; i < arity; i++) {
                 if (!isRamUndefValue(pattern[i])) {
                     low[i] = interpreter.evalExpr(*pattern[i], ctxt);
