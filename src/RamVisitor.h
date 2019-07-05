@@ -29,6 +29,7 @@
 #include <typeinfo>
 #include <utility>
 #include <vector>
+#include <typeindex>
 
 namespace souffle {
 
@@ -73,8 +74,12 @@ struct RamVisitor : public ram_visitor_tag {
     virtual R visit(const RamNode& node, Params... args) {
         // dispatch node processing based on dynamic type
 
+    	switch(node.kind) {
+//#define FORWARD(Kind) \
+//    if (const auto* n = dynamic_cast<const Ram##Kind*>(&node)) return visit##Kind(*n, args...);
+
 #define FORWARD(Kind) \
-    if (const auto* n = dynamic_cast<const Ram##Kind*>(&node)) return visit##Kind(*n, args...);
+    	case RK_##Kind : return visit##Kind(static_cast<const Ram##Kind&>(node), args...);
 
         // Relation
         FORWARD(Relation);
@@ -141,6 +146,7 @@ struct RamVisitor : public ram_visitor_tag {
         FORWARD(DebugInfo);
         FORWARD(Stratum);
 
+    	}
 #ifdef USE_MPI
         // mpi
         FORWARD(Send);

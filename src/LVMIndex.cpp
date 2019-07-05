@@ -137,6 +137,10 @@ public:
         return present;
     }
 
+    bool contains(const TupleRef&, const TupleRef&) const override {
+		return present;
+	}
+
     Stream scan() const override {
         return std::make_unique<Source>(present);
     }
@@ -243,6 +247,10 @@ public:
     bool contains(const TupleRef& tuple) const override {
         return data.contains(order.encode(tuple.asTuple<Arity>()));
     }
+
+    bool contains(const TupleRef& low, const TupleRef& high) const override {
+		return !bounds(low,high).empty();
+	}
 
     Stream scan() const override {
         return std::make_unique<Source>(order, data.begin(), data.end());
@@ -403,6 +411,11 @@ public:
     bool contains(const TupleRef& tuple) const override {
         return set.contains(tuple);
     }
+
+    bool contains(const TupleRef& low, const TupleRef& high) const override {
+    	assert(false && "Not implemented!");
+		return false;
+	}
 
     Stream scan() const override {
         return std::make_unique<Source>(set.begin(), set.end());

@@ -286,9 +286,10 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
     class ConditionEvaluator : public RamVisitor<bool> {
         RAMI& interpreter;
         const RAMIContext& ctxt;
+        bool profiling_enabled;
 
     public:
-        ConditionEvaluator(RAMI& interp, const RAMIContext& ctxt) : interpreter(interp), ctxt(ctxt) {}
+        ConditionEvaluator(RAMI& interp, const RAMIContext& ctxt, bool profiling) : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
 
         // -- connectors operators --
         bool visitTrue(const RamTrue& ltrue) override {
@@ -318,19 +319,19 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
 
             // construct the pattern tuple
             auto arity = rel.getArity();
-            auto values = exists.getValues();
+            const auto& values = exists.getValues();
 
-            if (Global::config().has("profile") && !exists.getRelation().isTemp()) {
+            if (profiling_enabled && !exists.getRelation().isTemp()) {
                 interpreter.reads[exists.getRelation().getName()]++;
             }
             // for total we use the exists test
             if (interpreter.isa->isTotalSignature(&exists)) {
                 RamDomain tuple[arity];
                 for (size_t i = 0; i < arity; i++) {
-                    assert(!isRamUndefValue(values[i]) && "Value in index is undefined");
+                    //assert(!isRamUndefValue(values[i]) && "Value in index is undefined");
                     tuple[i] = interpreter.evalExpr(*values[i], ctxt);
                 }
-                return rel.exists(tuple);
+                return rel.contains(TupleRef(tuple,arity));
             }
 
             // for partial we search for lower and upper boundaries
@@ -343,9 +344,10 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
             }
 
             // obtain index
-            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&exists));
-            auto range = idx->lowerUpperBound(low, high);
-            return range.first != range.second;  // if there is something => done
+            return rel.contains(0,TupleRef(low,arity),TupleRef(high,arity));
+//            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&exists));
+//            auto range = idx->lowerUpperBound(low, high);
+//            return range.first != range.second;  // if there is something => done
         }
 
         bool visitProvenanceExistenceCheck(const RamProvenanceExistenceCheck& provExists) override {
@@ -370,9 +372,10 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
             high[arity - 1] = MAX_RAM_DOMAIN;
 
             // obtain index
-            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&provExists));
-            auto range = idx->lowerUpperBound(low, high);
-            return range.first != range.second;  // if there is something => done
+            return rel.contains(0,TupleRef(low,arity),TupleRef(high,arity));
+//            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&provExists));
+//            auto range = idx->lowerUpperBound(low, high);
+//            return range.first != range.second;  // if there is something => done
         }
 
         // -- comparison operators --
@@ -448,7 +451,7 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
     };
 
     // run evaluator
-    return ConditionEvaluator(*this, ctxt)(cond);
+    return ConditionEvaluator(*this, ctxt, profiling_enabled)(cond);
 }
 
 /** Evaluate RAM operation */
@@ -456,9 +459,10 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
     class OperationEvaluator : public RamVisitor<bool> {
         RAMI& interpreter;
         RAMIContext& ctxt;
+        bool profiling_enabled;
 
     public:
-        OperationEvaluator(RAMI& interp, RAMIContext& ctxt) : interpreter(interp), ctxt(ctxt) {}
+        OperationEvaluator(RAMI& interp, RAMIContext& ctxt, bool profiling) : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
 
         // -- Operations -----------------------------
 
@@ -469,7 +473,7 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
         bool visitTupleOperation(const RamTupleOperation& search) override {
             bool result = visitNestedOperation(search);
 
-            if (Global::config().has("profile") && !search.getProfileText().empty()) {
+            if (profiling_enabled && !search.getProfileText().empty()) {
                 interpreter.frequencies[search.getProfileText()][interpreter.getIterationNumber()]++;
             }
             return result;
@@ -509,15 +513,16 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
             }
 
             // obtain index
-            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&scan));
+//            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&scan));
 
             // get iterator range
-            auto range = idx->lowerUpperBound(low, hig);
+//            auto range = idx->lowerUpperBound(low, hig);
 
             // conduct range query
-            for (auto ip = range.first; ip != range.second; ++ip) {
-                const RamDomain* data = *(ip);
-                ctxt[scan.getTupleId()] = data;
+            for (auto data : rel.range(0, TupleRef(low,arity), TupleRef(hig,arity))) {
+//            for (auto ip = range.first; ip != range.second; ++ip) {
+//                const RamDomain* data = *(ip);
+                ctxt[scan.getTupleId()] = &data[0];
                 if (!visitTupleOperation(scan)) {
                     break;
                 }
@@ -559,6 +564,7 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
                 }
             }
 
+            /*
             // obtain index
             auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&choice));
 
@@ -567,7 +573,10 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
 
             // conduct range query
             for (auto ip = range.first; ip != range.second; ++ip) {
-                const RamDomain* data = *(ip);
+            */
+            for (auto ip : rel.range(0, TupleRef(low,arity), TupleRef(hig,arity))) {
+                //const RamDomain* data = *(ip);
+                const RamDomain* data = &ip[0];
                 ctxt[choice.getTupleId()] = data;
                 if (interpreter.evalCond(choice.getCondition(), ctxt)) {
                     visitTupleOperation(choice);
@@ -708,6 +717,7 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
                 }
             }
 
+            /*
             // obtain index
             auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&aggregate));
 
@@ -716,8 +726,11 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
 
             // iterate through values
             for (auto ip = range.first; ip != range.second; ++ip) {
+            */
+            for (auto ip : rel.range(0, TupleRef(low,arity), TupleRef(hig, arity))) {
                 // link tuple
-                const RamDomain* data = *(ip);
+                //const RamDomain* data = *(ip);
+                const RamDomain* data = &ip[0];
                 ctxt[aggregate.getTupleId()] = data;
 
                 if (!interpreter.evalCond(aggregate.getCondition(), ctxt)) {
@@ -785,7 +798,7 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
                 result = visitNestedOperation(filter);
             }
 
-            if (Global::config().has("profile") && !filter.getProfileText().empty()) {
+            if (profiling_enabled && !filter.getProfileText().empty()) {
                 interpreter.frequencies[filter.getProfileText()][interpreter.getIterationNumber()]++;
             }
             return result;
@@ -831,7 +844,7 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
     ctxt.setReturnValues(args.getReturnValues());
     ctxt.setReturnErrors(args.getReturnErrors());
     ctxt.setArguments(args.getArguments());
-    OperationEvaluator(*this, ctxt).visit(op);
+    OperationEvaluator(*this, ctxt, profiling_enabled).visit(op);
 }
 
 /** Evaluate RAM statement */
@@ -839,9 +852,10 @@ void RAMI::evalStmt(const RamStatement& stmt, const RAMIContext& args) {
     class StatementEvaluator : public RamVisitor<bool> {
         RAMI& interpreter;
         const RAMIContext& ctxt;
+        bool profiling_enabled;
 
     public:
-        StatementEvaluator(RAMI& interp, const RAMIContext& ctxt) : interpreter(interp), ctxt(ctxt) {}
+        StatementEvaluator(RAMI& interp, const RAMIContext& ctxt, bool profiling) : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
 
         // -- Statements -----------------------------
 
@@ -914,7 +928,7 @@ void RAMI::evalStmt(const RamStatement& stmt, const RAMIContext& args) {
             // TODO (lyndonhenry): should enable strata as subprograms for interpreter here
 
             // Record relations created in each stratum
-            if (Global::config().has("profile")) {
+            if (profiling_enabled) {
                 std::map<std::string, size_t> relNames;
                 visitDepthFirst(stratum, [&](const RamCreate& create) {
                     relNames[create.getRelation().getName()] = create.getRelation().getArity();
@@ -1047,7 +1061,7 @@ void RAMI::evalStmt(const RamStatement& stmt, const RAMIContext& args) {
     ctxt.setReturnValues(args.getReturnValues());
     ctxt.setReturnErrors(args.getReturnErrors());
     ctxt.setArguments(args.getArguments());
-    StatementEvaluator(*this, ctxt).visit(stmt);
+    StatementEvaluator(*this, ctxt, profiling_enabled).visit(stmt);
 
     // create and run interpreter for statements
     // StatementEvaluator(*this).visit(stmt);
@@ -1061,7 +1075,7 @@ void RAMI::executeMain() {
     }
     const RamStatement& main = *translationUnit.getProgram()->getMain();
 
-    if (!Global::config().has("profile")) {
+    if (!profiling_enabled) {
         evalStmt(main);
     } else {
         ProfileEventSingleton::instance().setOutputFile(Global::config().get("profile"));

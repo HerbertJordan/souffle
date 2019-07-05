@@ -49,7 +49,7 @@ class SymbolTable;
 
 class RAMI : public RAMIInterface {
 public:
-    RAMI(RamTranslationUnit& tUnit) : RAMIInterface(tUnit) {}
+    RAMI(RamTranslationUnit& tUnit) : RAMIInterface(tUnit), profiling_enabled(Global::config().has("profile")) {}
     ~RAMI() {
         for (auto& x : environment) {
             delete x.second;
@@ -64,6 +64,7 @@ public:
             std::vector<RamDomain>& returnValues, std::vector<bool>& returnErrors) override;
 
 protected:
+
     /** Evaluate value */
     RamDomain evalExpr(const RamExpression& value, const RAMIContext& ctxt = RAMIContext());
 
@@ -107,27 +108,33 @@ protected:
     }
 
     void createRelation(const RamRelation& id, const MinIndexSelection* orderSet) {
-        RAMIRelation* res = nullptr;
+        RelationHandle res;
         assert(environment.find(id.getName()) == environment.end());
         if (id.getRepresentation() == RelationRepresentation::EQREL) {
-            res = new RAMIEqRelation(id.getArity(), orderSet, id.getName());
+        	assert(false && "EqRelation not supported ..\n");
+            //res = new RAMIEqRelation(id.getArity(), orderSet, id.getName());
         } else {
-            res = new RAMIRelation(id.getArity(), orderSet, id.getName());
+        	res = std::make_unique<RAMIRelation>(id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
         }
-        environment[id.getName()] = res;
+        environment[id.getName()] = new RelationHandle(std::move(res));
     }
 
+private:
     /** Get relation */
-    RAMIRelation& getRelation(const std::string& name) {
+    RelationHandle& getRelationHandle(const std::string& name) {
         // look up relation
         auto pos = environment.find(name);
         assert(pos != environment.end());
         return *pos->second;
     }
+public:
 
     /** Get relation */
     inline RAMIRelation& getRelation(const RamRelation& id) {
-        return getRelation(id.getName());
+    	if (id.relation) return **static_cast<RelationHandle*>(id.relation);
+        auto& handle = getRelationHandle(id.getName());
+        id.relation = &handle;
+        return *handle;
     }
 
     /** Drop relation */
@@ -139,20 +146,19 @@ protected:
 
     /** Swap relation */
     void swapRelation(const RamRelation& ramRel1, const RamRelation& ramRel2) {
-        RAMIRelation* rel1 = &getRelation(ramRel1);
-        RAMIRelation* rel2 = &getRelation(ramRel2);
-        environment[ramRel1.getName()] = rel2;
-        environment[ramRel2.getName()] = rel1;
+        RelationHandle& rel1 = getRelationHandle(ramRel1.getName());
+        RelationHandle& rel2 = getRelationHandle(ramRel2.getName());
+        std::swap(rel1,rel2);
     }
 
 private:
     friend RAMIProgInterface;
 
     /** relation environment type */
-    using relation_map = std::map<std::string, RAMIRelation*>;
+    using relation_map = std::map<std::string, RelationHandle*>;
 
     /** Get relation map */
-    virtual std::map<std::string, RAMIRelation*>& getRelationMap() override {
+    virtual std::map<std::string, RelationHandle*>& getRelationMap() override {
         return environment;
     }
 
@@ -170,6 +176,8 @@ private:
 
     /** Relation Environment */
     relation_map environment;
+
+    bool profiling_enabled;
 };
 
 }  // end of namespace souffle

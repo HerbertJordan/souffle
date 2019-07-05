@@ -38,6 +38,7 @@ namespace souffle {
  */
 class RamExpression : public RamNode {
 public:
+	RamExpression(RamNodeKind kind) : RamNode(kind) {}
     RamExpression* clone() const override = 0;
 };
 
@@ -47,7 +48,7 @@ public:
  */
 class RamAbstractOperator : public RamExpression {
 public:
-    RamAbstractOperator(std::vector<std::unique_ptr<RamExpression>> args) : arguments(std::move(args)) {}
+    RamAbstractOperator(RamNodeKind kind, std::vector<std::unique_ptr<RamExpression>> args) : RamExpression(kind), arguments(std::move(args)) {}
 
     /** @brief Get argument values */
     std::vector<RamExpression*> getArguments() const {
@@ -97,7 +98,7 @@ protected:
 class RamIntrinsicOperator : public RamAbstractOperator {
 public:
     template <typename... Args>
-    RamIntrinsicOperator(FunctorOp op, Args... args) : operation(op) {
+    RamIntrinsicOperator(FunctorOp op, Args... args) : RamAbstractOperator(RK_IntrinsicOperator), operation(op) {
         std::unique_ptr<RamExpression> tmp[] = {std::move(args)...};
         for (auto& cur : tmp) {
             arguments.push_back(std::move(cur));
@@ -105,7 +106,7 @@ public:
     }
 
     RamIntrinsicOperator(FunctorOp op, std::vector<std::unique_ptr<RamExpression>> args)
-            : RamAbstractOperator(std::move(args)), operation(op) {}
+            : RamAbstractOperator(RK_IntrinsicOperator, std::move(args)), operation(op) {}
 
     void print(std::ostream& os) const override {
         if (isInfixFunctorOp(operation)) {
@@ -151,7 +152,7 @@ protected:
 class RamUserDefinedOperator : public RamAbstractOperator {
 public:
     RamUserDefinedOperator(std::string n, std::string t, std::vector<std::unique_ptr<RamExpression>> args)
-            : RamAbstractOperator(std::move(args)), name(std::move(n)), type(std::move(t)) {}
+            : RamAbstractOperator(RK_UserDefinedOperator, std::move(args)), name(std::move(n)), type(std::move(t)) {}
 
     void print(std::ostream& os) const override {
         os << "@" << name << "_" << type << "(";
@@ -205,7 +206,7 @@ protected:
 class RamTupleElement : public RamExpression {
 public:
     RamTupleElement(size_t ident, size_t elem, std::unique_ptr<RamRelationReference> relRef = nullptr)
-            : identifier(ident), element(elem) {}
+            : RamExpression(RK_TupleElement), identifier(ident), element(elem) {}
 
     void print(std::ostream& os) const override {
         os << "t" << identifier << "." << element;
@@ -250,7 +251,7 @@ protected:
  */
 class RamNumber : public RamExpression {
 public:
-    RamNumber(RamDomain c) : constant(c) {}
+    RamNumber(RamDomain c) : RamExpression(RK_Number), constant(c) {}
 
     /** @brief Get constant */
     RamDomain getConstant() const {
@@ -285,7 +286,7 @@ protected:
  */
 class RamAutoIncrement : public RamExpression {
 public:
-    RamAutoIncrement() = default;
+    RamAutoIncrement() : RamExpression(RK_AutoIncrement) {};
 
     void print(std::ostream& os) const override {
         os << "autoinc()";
@@ -304,7 +305,7 @@ public:
  */
 class RamUndefValue : public RamExpression {
 public:
-    RamUndefValue() = default;
+    RamUndefValue() : RamExpression(RK_UndefValue) {};
 
     void print(std::ostream& os) const override {
         os << "⊥";
@@ -317,7 +318,7 @@ public:
 
 /** @brief Determines if an expression is undefined */
 inline bool isRamUndefValue(const RamExpression* expr) {
-    return nullptr != dynamic_cast<const RamUndefValue*>(expr);
+	return expr->kind == RK_UndefValue;
 }
 
 /**
@@ -326,7 +327,7 @@ inline bool isRamUndefValue(const RamExpression* expr) {
  */
 class RamPackRecord : public RamExpression {
 public:
-    RamPackRecord(std::vector<std::unique_ptr<RamExpression>> args) : arguments(std::move(args)) {}
+    RamPackRecord(std::vector<std::unique_ptr<RamExpression>> args) : RamExpression(RK_PackRecord), arguments(std::move(args)) {}
 
     /** @brief Get record arguments */
     std::vector<RamExpression*> getArguments() const {
@@ -382,7 +383,7 @@ protected:
  */
 class RamSubroutineArgument : public RamExpression {
 public:
-    RamSubroutineArgument(size_t number) : number(number) {}
+    RamSubroutineArgument(size_t number) : RamExpression(RK_SubroutineArgument), number(number) {}
 
     /** @brief Get argument */
     size_t getArgument() const {

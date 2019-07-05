@@ -43,17 +43,19 @@ public:
 
     /** Check whether tuple exists */
     bool contains(const tuple& t) const override {
-        return relation.exists(t.data);
+        return relation.contains(TupleRef(&t.data[0], t.size()));
     }
 
     /** Iterator to first tuple */
     iterator begin() const override {
-        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, relation.begin()));
+    	assert(false && "Not supported.");
+        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, nullptr));
     }
 
     /** Iterator to last tuple */
     iterator end() const override {
-        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, relation.end()));
+    	assert(false && "Not supported.");
+        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, nullptr));
     }
 
     /** Get name */
@@ -99,7 +101,7 @@ protected:
      */
     class iterator_base : public Relation::iterator_base {
     public:
-        iterator_base(uint32_t arg_id, const RAMIRelInterface* r, RAMIRelation::iterator i)
+        iterator_base(uint32_t arg_id, const RAMIRelInterface* r, int* i)
                 : Relation::iterator_base(arg_id), ramRelationInterface(r), it(i), tup(r) {}
         ~iterator_base() override = default;
 
@@ -115,11 +117,12 @@ protected:
 
             // construct the tuple to return
             for (size_t i = 0; i < ramRelationInterface->getArity(); i++) {
+				assert(false && "Not implemented.");
                 if (*(ramRelationInterface->getAttrType(i)) == 's') {
-                    std::string s = ramRelationInterface->getSymbolTable().resolve((*it)[i]);
-                    tup << s;
+//                    std::string s = ramRelationInterface->getSymbolTable().resolve((*it)[i]);
+//                    tup << s;
                 } else {
-                    tup << (*it)[i];
+//                    tup << (*it)[i];
                 }
             }
             tup.rewind();
@@ -144,7 +147,7 @@ protected:
 
     private:
         const RAMIRelInterface* ramRelationInterface;
-        RAMIRelation::iterator it;
+        int* it;
         tuple tup;
     };
 
@@ -185,7 +188,7 @@ public:
         // Build wrapper relations for Souffle's interface
         for (auto& rel_pair : exec.getRelationMap()) {
             auto& name = rel_pair.first;
-            auto& interpreterRel = *rel_pair.second;
+            auto& interpreterRel = **rel_pair.second;
             assert(map[name]);
             const RamRelation& rel = *map[name];
 

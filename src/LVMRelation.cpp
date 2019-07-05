@@ -69,6 +69,11 @@ bool LVMRelation::contains(const TupleRef& tuple) const {
     return main->contains(tuple);
 }
 
+bool LVMRelation::contains(const size_t& indexPos, const TupleRef& low, const TupleRef& high) const {
+	return indexes[indexPos]->contains(low,high);
+}
+
+
 Stream LVMRelation::scan() const {
     return main->scan();
 }
@@ -92,10 +97,6 @@ const std::string& LVMRelation::getName() const {
 
 const std::vector<std::string>& LVMRelation::getAttributeTypeQualifiers() const {
     return this->attributeTypes;
-}
-
-size_t LVMRelation::getArity() const {
-    return this->arity;
 }
 
 size_t LVMRelation::size() const {

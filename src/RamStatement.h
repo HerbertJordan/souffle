@@ -38,6 +38,8 @@ namespace souffle {
  */
 class RamStatement : public RamNode {
 public:
+	RamStatement(RamNodeKind kind) : RamNode(kind) {}
+
     /** @brief Pretty print with indentation */
     virtual void print(std::ostream& os, int tabpos) const = 0;
 
@@ -54,7 +56,7 @@ public:
  */
 class RamRelationStatement : public RamStatement {
 public:
-    RamRelationStatement(std::unique_ptr<RamRelationReference> relRef) : relationRef(std::move(relRef)) {}
+    RamRelationStatement(RamNodeKind kind, std::unique_ptr<RamRelationReference> relRef) : RamStatement(kind), relationRef(std::move(relRef)) {}
 
     /** @brief Get RAM relation */
     const RamRelation& getRelation() const {
@@ -92,7 +94,7 @@ protected:
  */
 class RamCreate : public RamRelationStatement {
 public:
-    RamCreate(std::unique_ptr<RamRelationReference> relRef) : RamRelationStatement(std::move(relRef)) {}
+    RamCreate(std::unique_ptr<RamRelationReference> relRef) : RamRelationStatement(RK_Create,std::move(relRef)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         const RamRelation& rel = getRelation();
@@ -113,8 +115,8 @@ public:
  */
 class RamAbstractLoadStore : public RamRelationStatement {
 public:
-    RamAbstractLoadStore(std::unique_ptr<RamRelationReference> relRef, std::vector<IODirectives> ioDirectives)
-            : RamRelationStatement(std::move(relRef)), ioDirectives(std::move(ioDirectives)) {}
+    RamAbstractLoadStore(RamNodeKind kind, std::unique_ptr<RamRelationReference> relRef, std::vector<IODirectives> ioDirectives)
+            : RamRelationStatement(kind, std::move(relRef)), ioDirectives(std::move(ioDirectives)) {}
 
     /** @brief Get load directives */
     const std::vector<IODirectives>& getIODirectives() const {
@@ -148,7 +150,7 @@ protected:
 class RamLoad : public RamAbstractLoadStore {
 public:
     RamLoad(std::unique_ptr<RamRelationReference> relRef, std::vector<IODirectives> ioDirectives)
-            : RamAbstractLoadStore(std::move(relRef), std::move(ioDirectives)) {}
+            : RamAbstractLoadStore(RK_Load, std::move(relRef), std::move(ioDirectives)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         const RamRelation& rel = getRelation();
@@ -185,7 +187,7 @@ protected:
 class RamStore : public RamAbstractLoadStore {
 public:
     RamStore(std::unique_ptr<RamRelationReference> relRef, std::vector<IODirectives> ioDirectives)
-            : RamAbstractLoadStore(std::move(relRef), std::move(ioDirectives)) {}
+            : RamAbstractLoadStore(RK_Store, std::move(relRef), std::move(ioDirectives)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         const RamRelation& rel = getRelation();
@@ -220,7 +222,7 @@ protected:
  */
 class RamClear : public RamRelationStatement {
 public:
-    RamClear(std::unique_ptr<RamRelationReference> relRef) : RamRelationStatement(std::move(relRef)) {}
+    RamClear(std::unique_ptr<RamRelationReference> relRef) : RamRelationStatement(RK_Clear, std::move(relRef)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         const RamRelation& rel = getRelation();
@@ -246,7 +248,7 @@ public:
  */
 class RamDrop : public RamRelationStatement {
 public:
-    RamDrop(std::unique_ptr<RamRelationReference> relRef) : RamRelationStatement(std::move(relRef)) {}
+    RamDrop(std::unique_ptr<RamRelationReference> relRef) : RamRelationStatement(RK_Drop, std::move(relRef)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         const RamRelation& rel = getRelation();
@@ -268,8 +270,8 @@ public:
  */
 class RamBinRelationStatement : public RamStatement {
 public:
-    RamBinRelationStatement(std::unique_ptr<RamRelationReference> f, std::unique_ptr<RamRelationReference> s)
-            : first(std::move(f)), second(std::move(s)) {
+    RamBinRelationStatement(RamNodeKind kind, std::unique_ptr<RamRelationReference> f, std::unique_ptr<RamRelationReference> s)
+            : RamStatement(kind), first(std::move(f)), second(std::move(s)) {
         assert(first->get()->getArity() == second->get()->getArity() && "mismatching relations");
         for (size_t i = 0; i < first->get()->getArity(); i++) {
             assert(first->get()->getArgTypeQualifier(i) == second->get()->getArgTypeQualifier(i) &&
@@ -327,7 +329,7 @@ protected:
 class RamMerge : public RamBinRelationStatement {
 public:
     RamMerge(std::unique_ptr<RamRelationReference> tRef, std::unique_ptr<RamRelationReference> sRef)
-            : RamBinRelationStatement(std::move(sRef), std::move(tRef)) {}
+            : RamBinRelationStatement(RK_Merge, std::move(sRef), std::move(tRef)) {}
 
     /** @brief Get source relation */
     const RamRelation& getSourceRelation() const {
@@ -371,7 +373,7 @@ protected:
 class RamSwap : public RamBinRelationStatement {
 public:
     RamSwap(std::unique_ptr<RamRelationReference> f, std::unique_ptr<RamRelationReference> s)
-            : RamBinRelationStatement(std::move(f), std::move(s)) {}
+            : RamBinRelationStatement(RK_Swap, std::move(f), std::move(s)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         os << times(" ", tabpos);
@@ -403,7 +405,7 @@ protected:
 class RamFact : public RamRelationStatement {
 public:
     RamFact(std::unique_ptr<RamRelationReference> relRef, std::vector<std::unique_ptr<RamExpression>>&& v)
-            : RamRelationStatement(std::move(relRef)), values(std::move(v)) {}
+            : RamRelationStatement(RK_Fact, std::move(relRef)), values(std::move(v)) {}
 
     /** @brief Get arguments of fact */
     std::vector<RamExpression*> getValues() const {
@@ -467,7 +469,7 @@ protected:
  */
 class RamQuery : public RamStatement {
 public:
-    RamQuery(std::unique_ptr<RamOperation> o) : operation(std::move(o)) {}
+    RamQuery(std::unique_ptr<RamOperation> o) : RamStatement(RK_Query), operation(std::move(o)) {}
 
     /** @brief Get RAM operation */
     const RamOperation& getOperation() const {
@@ -509,7 +511,7 @@ protected:
  */
 class RamListStatement : public RamStatement {
 public:
-    RamListStatement() : RamStatement() {}
+    RamListStatement(RamNodeKind kind) : RamStatement(kind) {}
 
     /** @brief Get statements */
     std::vector<RamStatement*> getStatements() const {
@@ -556,10 +558,10 @@ protected:
  */
 class RamSequence : public RamListStatement {
 public:
-    RamSequence() : RamListStatement() {}
+    RamSequence() : RamListStatement(RK_Sequence) {}
 
     template <typename... Stmts>
-    RamSequence(std::unique_ptr<Stmts>&&... stmts) : RamListStatement() {
+    RamSequence(std::unique_ptr<Stmts>&&... stmts) : RamListStatement(RK_Sequence) {
         // move all the given statements into the vector (not so simple)
         std::unique_ptr<RamStatement> tmp[] = {std::move(stmts)...};
         for (auto& cur : tmp) {
@@ -610,7 +612,7 @@ protected:
  */
 class RamParallel : public RamListStatement {
 public:
-    RamParallel() : RamListStatement() {}
+    RamParallel() : RamListStatement(RK_Parallel) {}
 
     void print(std::ostream& os, int tabpos) const override {
         os << times(" ", tabpos) << "PARALLEL" << std::endl;
@@ -649,11 +651,11 @@ protected:
  */
 class RamLoop : public RamStatement {
 public:
-    RamLoop(std::unique_ptr<RamStatement> b) : body(std::move(b)) {}
+    RamLoop(std::unique_ptr<RamStatement> b) : RamStatement(RK_Loop), body(std::move(b)) {}
 
     template <typename... Stmts>
     RamLoop(std::unique_ptr<RamStatement> f, std::unique_ptr<RamStatement> s, std::unique_ptr<Stmts>... rest)
-            : body(std::make_unique<RamSequence>(std::move(f), std::move(s), std::move(rest)...)) {}
+            : RamStatement(RK_Loop), body(std::make_unique<RamSequence>(std::move(f), std::move(s), std::move(rest)...)) {}
 
     /** @brief Get loop body */
     const RamStatement& getBody() const {
@@ -704,7 +706,7 @@ protected:
  */
 class RamExit : public RamStatement {
 public:
-    RamExit(std::unique_ptr<RamCondition> c) : condition(std::move(c)) {}
+    RamExit(std::unique_ptr<RamCondition> c) : RamStatement(RK_Exit), condition(std::move(c)) {}
 
     /** @brief Get exit condition */
     const RamCondition& getCondition() const {
@@ -806,7 +808,7 @@ class RamLogRelationTimer : public RamRelationStatement, public RamAbstractLog {
 public:
     RamLogRelationTimer(
             std::unique_ptr<RamStatement> stmt, std::string msg, std::unique_ptr<RamRelationReference> relRef)
-            : RamRelationStatement(std::move(relRef)), RamAbstractLog(std::move(stmt), std::move(msg)) {}
+            : RamRelationStatement(RK_LogRelationTimer, std::move(relRef)), RamAbstractLog(std::move(stmt), std::move(msg)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         os << times(" ", tabpos) << "START_TIMER ON " << getRelation().getName() << " \""
@@ -861,7 +863,7 @@ protected:
 class RamLogTimer : public RamStatement, public RamAbstractLog {
 public:
     RamLogTimer(std::unique_ptr<RamStatement> stmt, std::string msg)
-            : RamAbstractLog(std::move(stmt), std::move(msg)) {}
+            : RamStatement(RK_LogTimer), RamAbstractLog(std::move(stmt), std::move(msg)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         os << times(" ", tabpos) << "START_TIMER \"" << stringify(message) << "\"" << std::endl;
@@ -906,7 +908,7 @@ protected:
 class RamDebugInfo : public RamStatement, public RamAbstractLog {
 public:
     RamDebugInfo(std::unique_ptr<RamStatement> stmt, std::string msg)
-            : RamAbstractLog(std::move(stmt), std::move(msg)) {}
+            : RamStatement(RK_DebugInfo), RamAbstractLog(std::move(stmt), std::move(msg)) {}
 
     void print(std::ostream& os, int tabpos) const override {
         os << times(" ", tabpos) << "BEGIN_DEBUG \"" << stringify(message) << "\"" << std::endl;
@@ -951,7 +953,7 @@ protected:
  */
 class RamStratum : public RamStatement {
 public:
-    RamStratum(std::unique_ptr<RamStatement> b, const int i) : body(std::move(b)), index(i) {}
+    RamStratum(std::unique_ptr<RamStatement> b, const int i) : RamStatement(RK_Stratum), body(std::move(b)), index(i) {}
 
     /** @brief Get stratum body */
     const RamStatement& getBody() const {
@@ -1005,7 +1007,7 @@ protected:
 class RamLogSize : public RamRelationStatement {
 public:
     RamLogSize(std::unique_ptr<RamRelationReference> relRef, std::string message)
-            : RamRelationStatement(std::move(relRef)), message(std::move(message)) {}
+            : RamRelationStatement(RK_LogSize, std::move(relRef)), message(std::move(message)) {}
 
     /** @brief Get logging message */
     const std::string& getMessage() const {

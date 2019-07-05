@@ -43,6 +43,8 @@ class RAMIProgInterface;
  */
 class RAMIInterface {
 public:
+    using RelationHandle = std::unique_ptr<RAMIRelation>;
+
     RAMIInterface(RamTranslationUnit& tUnit)
             : translationUnit(tUnit), isa(tUnit.getAnalysis<RamIndexAnalysis>()) {}
 
@@ -125,7 +127,7 @@ protected:
     }
 
     /** Get relation map */
-    virtual std::map<std::string, RAMIRelation*>& getRelationMap() = 0;
+    virtual std::map<std::string, RelationHandle*>& getRelationMap() = 0;
 
     /** RAM translation Unit */
     RamTranslationUnit& translationUnit;

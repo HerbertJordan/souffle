@@ -382,6 +382,11 @@ public:
     virtual bool contains(const TupleRef& tuple) const = 0;
 
     /**
+     * Tests whether this index contains any tuple within the given bounds.
+     */
+    virtual bool contains(const TupleRef& low, const TupleRef& high) const = 0;
+
+    /**
      * Returns a stream covering the entire index content.
      */
     virtual Stream scan() const = 0;

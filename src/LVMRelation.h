@@ -105,6 +105,11 @@ public:
     bool contains(const TupleRef& tuple) const;
 
     /**
+     * Tests whether this relation contains any element between the given boundaries.
+     */
+    bool contains(const size_t& indexPos, const TupleRef& low, const TupleRef& high) const;
+
+    /**
      * Obtains a stream to scan the entire relation.
      */
     Stream scan() const;
@@ -145,7 +150,9 @@ public:
     /**
      * Return arity
      */
-    size_t getArity() const;
+    size_t getArity() const {
+    	return arity;
+    }
 
     /**
      * Return number of tuples in relation (full-order)

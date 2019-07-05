@@ -415,11 +415,16 @@ SearchSignature RamIndexAnalysis::getSearchSignature(const RamRelation* ramRel) 
 }
 
 bool RamIndexAnalysis::isTotalSignature(const RamAbstractExistenceCheck* existCheck) const {
+	if (existCheck->isTotal != 0) {
+		return existCheck->isTotal == 1;
+	}
     for (const auto& cur : existCheck->getValues()) {
         if (isRamUndefValue(cur)) {
+        	existCheck->isTotal = 2;
             return false;
         }
     }
+    existCheck->isTotal = 1;
     return true;
 }
 

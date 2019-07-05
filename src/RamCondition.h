@@ -38,6 +38,7 @@ namespace souffle {
  */
 class RamCondition : public RamNode {
 public:
+	RamCondition(RamNodeKind kind) : RamNode(kind) {}
     RamCondition* clone() const override = 0;
 };
 
@@ -49,7 +50,7 @@ public:
  */
 class RamTrue : public RamCondition {
 public:
-    RamTrue() = default;
+    RamTrue() : RamCondition(RK_True) {};
 
     void print(std::ostream& os) const override {
         os << "true";
@@ -72,7 +73,7 @@ inline bool isRamTrue(const RamCondition* cond) {
  */
 class RamFalse : public RamCondition {
 public:
-    RamFalse() = default;
+    RamFalse() : RamCondition(RK_False) {};
 
     void print(std::ostream& os) const override {
         os << "false";
@@ -100,7 +101,7 @@ public:
 class RamConjunction : public RamCondition {
 public:
     RamConjunction(std::unique_ptr<RamCondition> l, std::unique_ptr<RamCondition> r)
-            : lhs(std::move(l)), rhs(std::move(r)) {}
+            : RamCondition(RK_Conjunction), lhs(std::move(l)), rhs(std::move(r)) {}
 
     /** @brief Get left-hand side of conjunction */
     const RamCondition& getLHS() const {
@@ -161,7 +162,7 @@ protected:
  */
 class RamNegation : public RamCondition {
 public:
-    RamNegation(std::unique_ptr<RamCondition> operand) : operand(std::move(operand)) {}
+    RamNegation(std::unique_ptr<RamCondition> operand) : RamCondition(RK_Negation), operand(std::move(operand)) {}
 
     /** @brief Get operand of negation */
     const RamCondition& getOperand() const {
@@ -214,7 +215,7 @@ protected:
 class RamConstraint : public RamCondition {
 public:
     RamConstraint(BinaryConstraintOp op, std::unique_ptr<RamExpression> l, std::unique_ptr<RamExpression> r)
-            : op(op), lhs(std::move(l)), rhs(std::move(r)) {}
+            : RamCondition(RK_Constraint), op(op), lhs(std::move(l)), rhs(std::move(r)) {}
 
     void print(std::ostream& os) const override {
         os << "(";
@@ -280,8 +281,9 @@ protected:
 class RamAbstractExistenceCheck : public RamCondition {
 public:
     RamAbstractExistenceCheck(
+    		RamNodeKind kind,
             std::unique_ptr<RamRelationReference> relRef, std::vector<std::unique_ptr<RamExpression>> vals)
-            : relationRef(std::move(relRef)), values(std::move(vals)) {}
+            : RamCondition(kind), relationRef(std::move(relRef)), values(std::move(vals)), value_ptr(toPtrVector(values)) {}
 
     /** @brief Get relation */
     const RamRelation& getRelation() const {
@@ -289,8 +291,8 @@ public:
     }
 
     /** @brief Get arguments of the tuple/pattern */
-    std::vector<RamExpression*> getValues() const {
-        return toPtrVector(values);
+    const std::vector<RamExpression*>& getValues() const {
+        return value_ptr;
     }
 
     std::vector<const RamNode*> getChildNodes() const override {
@@ -306,7 +308,10 @@ public:
         for (auto& val : values) {
             val = map(std::move(val));
         }
+        value_ptr = toPtrVector(values);
     }
+
+    mutable int isTotal = 0;
 
 protected:
     /** Relation */
@@ -314,6 +319,8 @@ protected:
 
     /** Pattern -- nullptr if undefined */
     std::vector<std::unique_ptr<RamExpression>> values;
+
+    std::vector<RamExpression*> value_ptr;
 
     bool equal(const RamNode& node) const override {
         assert(nullptr != dynamic_cast<const RamAbstractExistenceCheck*>(&node));
@@ -338,7 +345,7 @@ class RamExistenceCheck : public RamAbstractExistenceCheck {
 public:
     RamExistenceCheck(
             std::unique_ptr<RamRelationReference> relRef, std::vector<std::unique_ptr<RamExpression>> vals)
-            : RamAbstractExistenceCheck(std::move(relRef), std::move(vals)) {}
+            : RamAbstractExistenceCheck(RK_ExistenceCheck, std::move(relRef), std::move(vals)) {}
 
     void print(std::ostream& os) const override {
         os << "("
@@ -371,7 +378,7 @@ class RamProvenanceExistenceCheck : public RamAbstractExistenceCheck {
 public:
     RamProvenanceExistenceCheck(
             std::unique_ptr<RamRelationReference> relRef, std::vector<std::unique_ptr<RamExpression>> vals)
-            : RamAbstractExistenceCheck(std::move(relRef), std::move(vals)) {}
+            : RamAbstractExistenceCheck(RK_ProvenanceExistenceCheck, std::move(relRef), std::move(vals)) {}
 
     void print(std::ostream& os) const override {
         os << "("
@@ -409,7 +416,7 @@ public:
  */
 class RamEmptinessCheck : public RamCondition {
 public:
-    RamEmptinessCheck(std::unique_ptr<RamRelationReference> relRef) : relationRef(std::move(relRef)) {}
+    RamEmptinessCheck(std::unique_ptr<RamRelationReference> relRef) : RamCondition(RK_EmptinessCheck), relationRef(std::move(relRef)) {}
 
     /** @brief Get relation */
     const RamRelation& getRelation() const {
