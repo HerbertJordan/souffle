@@ -111,8 +111,7 @@ protected:
         RelationHandle res;
         assert(environment.find(id.getName()) == environment.end());
         if (id.getRepresentation() == RelationRepresentation::EQREL) {
-        	assert(false && "EqRelation not supported ..\n");
-            //res = new RAMIEqRelation(id.getArity(), orderSet, id.getName());
+        	res = std::make_unique<RAMIEqRelation>(id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
         } else {
         	res = std::make_unique<RAMIRelation>(id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
         }

@@ -284,7 +284,9 @@ private:
 				break;
 			}
 		}
-		assert(fullIndexSearch == false && "Full index search is not allowed in range query\n");
+		if (fullIndexSearch) {
+			b[Arity-1]++;
+		}
 		return { data.lower_bound(a), data.lower_bound(b) };
     }
 

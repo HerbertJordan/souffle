@@ -729,7 +729,6 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
             */
             for (auto ip : rel.range(0, TupleRef(low,arity), TupleRef(hig, arity))) {
                 // link tuple
-                //const RamDomain* data = *(ip);
                 const RamDomain* data = &ip[0];
                 ctxt[aggregate.getTupleId()] = data;
 
