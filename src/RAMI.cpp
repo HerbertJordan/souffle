@@ -289,7 +289,8 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
         bool profiling_enabled;
 
     public:
-        ConditionEvaluator(RAMI& interp, const RAMIContext& ctxt, bool profiling) : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
+        ConditionEvaluator(RAMI& interp, const RAMIContext& ctxt, bool profiling)
+                : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
 
         // -- connectors operators --
         bool visitTrue(const RamTrue& ltrue) override {
@@ -328,10 +329,10 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
             if (interpreter.isa->isTotalSignature(&exists)) {
                 RamDomain tuple[arity];
                 for (size_t i = 0; i < arity; i++) {
-                    //assert(!isRamUndefValue(values[i]) && "Value in index is undefined");
+                    // assert(!isRamUndefValue(values[i]) && "Value in index is undefined");
                     tuple[i] = interpreter.evalExpr(*values[i], ctxt);
                 }
-                return rel.contains(TupleRef(tuple,arity));
+                return rel.contains(TupleRef(tuple, arity));
             }
 
             // for partial we search for lower and upper boundaries
@@ -344,10 +345,8 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
             }
 
             // obtain index
-            return rel.contains(0,TupleRef(low,arity),TupleRef(high,arity));
-//            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&exists));
-//            auto range = idx->lowerUpperBound(low, high);
-//            return range.first != range.second;  // if there is something => done
+            size_t indexPos = interpreter.getIndexPos(exists);
+            return rel.contains(indexPos, TupleRef(low, arity), TupleRef(high, arity));
         }
 
         bool visitProvenanceExistenceCheck(const RamProvenanceExistenceCheck& provExists) override {
@@ -372,10 +371,8 @@ bool RAMI::evalCond(const RamCondition& cond, const RAMIContext& ctxt) {
             high[arity - 1] = MAX_RAM_DOMAIN;
 
             // obtain index
-            return rel.contains(0,TupleRef(low,arity),TupleRef(high,arity));
-//            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&provExists));
-//            auto range = idx->lowerUpperBound(low, high);
-//            return range.first != range.second;  // if there is something => done
+            size_t indexPos = interpreter.getIndexPos(provExists);
+            return rel.contains(indexPos, TupleRef(low, arity), TupleRef(high, arity));
         }
 
         // -- comparison operators --
@@ -462,7 +459,8 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
         bool profiling_enabled;
 
     public:
-        OperationEvaluator(RAMI& interp, RAMIContext& ctxt, bool profiling) : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
+        OperationEvaluator(RAMI& interp, RAMIContext& ctxt, bool profiling)
+                : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
 
         // -- Operations -----------------------------
 
@@ -512,16 +510,12 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
                 }
             }
 
-            // obtain index
-//            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&scan));
-
-            // get iterator range
-//            auto range = idx->lowerUpperBound(low, hig);
+            size_t indexPos = interpreter.getIndexPos(scan);
 
             // conduct range query
-            for (auto data : rel.range(0, TupleRef(low,arity), TupleRef(hig,arity))) {
-//            for (auto ip = range.first; ip != range.second; ++ip) {
-//                const RamDomain* data = *(ip);
+            for (auto data : rel.range(indexPos, TupleRef(low, arity), TupleRef(hig, arity))) {
+                //            for (auto ip = range.first; ip != range.second; ++ip) {
+                //                const RamDomain* data = *(ip);
                 ctxt[scan.getTupleId()] = &data[0];
                 if (!visitTupleOperation(scan)) {
                     break;
@@ -564,18 +558,10 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
                 }
             }
 
-            /*
-            // obtain index
-            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&choice));
+            size_t indexPos = interpreter.getIndexPos(choice);
 
-            // get iterator range
-            auto range = idx->lowerUpperBound(low, hig);
-
-            // conduct range query
-            for (auto ip = range.first; ip != range.second; ++ip) {
-            */
-            for (auto ip : rel.range(0, TupleRef(low,arity), TupleRef(hig,arity))) {
-                //const RamDomain* data = *(ip);
+            for (auto ip : rel.range(indexPos, TupleRef(low, arity), TupleRef(hig, arity))) {
+                // const RamDomain* data = *(ip);
                 const RamDomain* data = &ip[0];
                 ctxt[choice.getTupleId()] = data;
                 if (interpreter.evalCond(choice.getCondition(), ctxt)) {
@@ -717,17 +703,8 @@ void RAMI::evalOp(const RamOperation& op, const RAMIContext& args) {
                 }
             }
 
-            /*
-            // obtain index
-            auto idx = rel.getIndex(interpreter.isa->getSearchSignature(&aggregate));
-
-            // get iterator range
-            auto range = idx->lowerUpperBound(low, hig);
-
-            // iterate through values
-            for (auto ip = range.first; ip != range.second; ++ip) {
-            */
-            for (auto ip : rel.range(0, TupleRef(low,arity), TupleRef(hig, arity))) {
+            size_t indexPos = interpreter.getIndexPos(aggregate);
+            for (auto ip : rel.range(indexPos, TupleRef(low, arity), TupleRef(hig, arity))) {
                 // link tuple
                 const RamDomain* data = &ip[0];
                 ctxt[aggregate.getTupleId()] = data;
@@ -854,7 +831,8 @@ void RAMI::evalStmt(const RamStatement& stmt, const RAMIContext& args) {
         bool profiling_enabled;
 
     public:
-        StatementEvaluator(RAMI& interp, const RAMIContext& ctxt, bool profiling) : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
+        StatementEvaluator(RAMI& interp, const RAMIContext& ctxt, bool profiling)
+                : interpreter(interp), ctxt(ctxt), profiling_enabled(profiling) {}
 
         // -- Statements -----------------------------
 
