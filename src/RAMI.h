@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "AstVisitor.h"
 #include "RAMIContext.h"
 #include "RAMIInterface.h"
 #include "RAMIRelation.h"
@@ -49,7 +50,8 @@ class SymbolTable;
 
 class RAMI : public RAMIInterface {
 public:
-    RAMI(RamTranslationUnit& tUnit) : RAMIInterface(tUnit), profiling_enabled(Global::config().has("profile")) {}
+    RAMI(RamTranslationUnit& tUnit)
+            : RAMIInterface(tUnit), profiling_enabled(Global::config().has("profile")) {}
     ~RAMI() {
         for (auto& x : environment) {
             delete x.second;
@@ -64,7 +66,6 @@ public:
             std::vector<RamDomain>& returnValues, std::vector<bool>& returnErrors) override;
 
 protected:
-
     /** Evaluate value */
     RamDomain evalExpr(const RamExpression& value, const RAMIContext& ctxt = RAMIContext());
 
@@ -111,12 +112,37 @@ protected:
         RelationHandle res;
         assert(environment.find(id.getName()) == environment.end());
         if (id.getRepresentation() == RelationRepresentation::EQREL) {
-        	res = std::make_unique<RAMIEqRelation>(id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
+            res = std::make_unique<RAMIEqRelation>(
+                    id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
         } else {
-        	res = std::make_unique<RAMIRelation>(id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
+            res = std::make_unique<RAMIRelation>(
+                    id.getArity(), id.getName(), std::vector<std::string>(), *orderSet);
         }
         environment[id.getName()] = new RelationHandle(std::move(res));
     }
+
+    /** Get the index position in a relation based on the SearchSignature */
+    template <class RamNode>
+    size_t getIndexPos(const RamNode& node) {
+        auto ret = indexPositionCache.find((RamNode*)&node);
+        size_t indexPos = 0;
+        if (ret != indexPositionCache.end()) {
+            indexPos = ret->second;
+        } else {
+            /** If index position is not in the cache yet, consult RamIndexAnalysis
+             * and store the position in the cache for fast lookup next time.
+             */
+            const MinIndexSelection& orderSet = isa->getIndexes(node.getRelation());
+            SearchSignature signature = isa->getSearchSignature(&node);
+            // A zero signature is equivalent as a full order signature.
+            if (signature == 0) {
+                signature = (1 << node.getRelation().getArity()) - 1;
+            }
+            indexPos = orderSet.getLexOrderNum(signature);
+            indexPositionCache[(RamNode*)&node] = indexPos;
+        }
+        return indexPos;
+    };
 
 private:
     /** Get relation */
@@ -126,11 +152,11 @@ private:
         assert(pos != environment.end());
         return *pos->second;
     }
-public:
 
+public:
     /** Get relation */
     inline RAMIRelation& getRelation(const RamRelation& id) {
-    	if (id.relation) return **static_cast<RelationHandle*>(id.relation);
+        if (id.relation) return **static_cast<RelationHandle*>(id.relation);
         auto& handle = getRelationHandle(id.getName());
         id.relation = &handle;
         return *handle;
@@ -147,7 +173,7 @@ public:
     void swapRelation(const RamRelation& ramRel1, const RamRelation& ramRel2) {
         RelationHandle& rel1 = getRelationHandle(ramRel1.getName());
         RelationHandle& rel2 = getRelationHandle(ramRel2.getName());
-        std::swap(rel1,rel2);
+        std::swap(rel1, rel2);
     }
 
 private:
@@ -177,6 +203,9 @@ private:
     relation_map environment;
 
     bool profiling_enabled;
+
+    /** Index position Cache, mapping from operation to index id*/
+    std::unordered_map<RamNode*, size_t> indexPositionCache;
 };
 
 }  // end of namespace souffle
