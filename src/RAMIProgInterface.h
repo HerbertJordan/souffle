@@ -48,14 +48,12 @@ public:
 
     /** Iterator to first tuple */
     iterator begin() const override {
-    	assert(false && "Not supported.");
-        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, nullptr));
+        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, relation.begin()));
     }
 
     /** Iterator to last tuple */
     iterator end() const override {
-    	assert(false && "Not supported.");
-        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, nullptr));
+        return RAMIRelInterface::iterator(new RAMIRelInterface::iterator_base(id, this, relation.end()));
     }
 
     /** Get name */
@@ -101,8 +99,8 @@ protected:
      */
     class iterator_base : public Relation::iterator_base {
     public:
-        iterator_base(uint32_t arg_id, const RAMIRelInterface* r, int* i)
-                : Relation::iterator_base(arg_id), ramRelationInterface(r), it(i), tup(r) {}
+        iterator_base(uint32_t arg_id, const RAMIRelInterface* r, RAMIRelation::Iterator i)
+                : Relation::iterator_base(arg_id), ramRelationInterface(r), it(std::move(i)), tup(r) {}
         ~iterator_base() override = default;
 
         /** Increment iterator */
@@ -117,12 +115,11 @@ protected:
 
             // construct the tuple to return
             for (size_t i = 0; i < ramRelationInterface->getArity(); i++) {
-				assert(false && "Not implemented.");
                 if (*(ramRelationInterface->getAttrType(i)) == 's') {
-//                    std::string s = ramRelationInterface->getSymbolTable().resolve((*it)[i]);
-//                    tup << s;
+                    std::string s = ramRelationInterface->getSymbolTable().resolve((*it)[i]);
+                    tup << s;
                 } else {
-//                    tup << (*it)[i];
+                    tup << (*it)[i];
                 }
             }
             tup.rewind();
@@ -147,7 +144,7 @@ protected:
 
     private:
         const RAMIRelInterface* ramRelationInterface;
-        int* it;
+        RAMIRelation::Iterator it;
         tuple tup;
     };
 
