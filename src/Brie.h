@@ -2262,6 +2262,8 @@ public:
         op_context() = default;
     };
 
+    using operation_hints = op_context;
+
     using base::contains;
     using base::insert;
 
@@ -2472,9 +2474,10 @@ public:
      * Obtains an iterator to the first element not less than the given entry value.
      *
      * @param entry the lower bound for this search
+     * @param ctxt the operation context to be utilized
      * @return an iterator addressing the first element in this structure not less than the given value
      */
-    iterator lower_bound(const entry_type& entry) const {
+    iterator lower_bound(const entry_type& entry, op_context&) const {
         // start with a default-initialized iterator
         iterator res;
 
@@ -2483,6 +2486,17 @@ public:
 
         // use the result
         return found ? res : end();
+    }
+
+    /**
+	 * Obtains an iterator to the first element not less than the given entry value.
+	 *
+	 * @param entry the lower bound for this search
+	 * @return an iterator addressing the first element in this structure not less than the given value
+	 */
+    iterator lower_bound(const entry_type& entry) const {
+    	op_context ctxt;
+    	return lower_bound(entry, ctxt);
     }
 
     /**
@@ -2652,6 +2666,7 @@ class Trie<0u> : public detail::TrieBase<0u, Trie<0u>> {
 public:
     using element_type = entry_type;
     struct op_context {};
+    using operation_hints = op_context;
 
     using base::contains;
     using base::insert;
@@ -2880,6 +2895,7 @@ class Trie<1u> : public detail::TrieBase<1u, Trie<1u>> {
 public:
     using element_type = entry_type;
     using op_context = typename map_type::op_context;
+    using operation_hints = op_context;
 
     using base::contains;
     using base::insert;
@@ -3116,8 +3132,13 @@ public:
         return make_range(iterator(pos), iterator(next));
     }
 
+    iterator lower_bound(const entry_type& entry, op_context&) const {
+		return iterator(map.lower_bound(entry[0]));
+	}
+
     iterator lower_bound(const entry_type& entry) const {
-        return iterator(map.lower_bound(entry[0]));
+    	op_context ctxt;
+        return lower_bound(entry, ctxt);
     }
 
     /**

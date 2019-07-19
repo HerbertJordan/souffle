@@ -345,11 +345,44 @@ public:
 };
 
 /**
+ * A view on a relation caching local access patterns (not thread safe!).
+ * Each thread should create and use its own view for accessing relations
+ * to exploit access patterns via operation hints.
+ */
+class IndexView {
+public:
+
+	/**
+	 * Tests whether the given entry is contained in this index.
+	 */
+	virtual bool contains(const TupleRef& entry) const =0;
+
+	/**
+	 * Tests whether any element in the given range is contained in this index.
+	 */
+    virtual bool contains(const TupleRef& low, const TupleRef& high) const =0;
+
+    /**
+     * Obtains a stream for the given range within this index.
+     */
+    virtual Stream range(const TupleRef& low, const TupleRef& high) const =0;
+
+};
+
+// A general handler type for index views.
+using IndexViewPtr = std::unique_ptr<IndexView>;
+
+/**
  * An index is an abstraction of a data structure
  */
 class LVMIndex {
 public:
     virtual ~LVMIndex() = default;
+
+    /**
+     * Requests the creation of a view on this index.
+     */
+    virtual IndexViewPtr createView() const = 0;
 
     /**
      * Obtains the arity of the given index.

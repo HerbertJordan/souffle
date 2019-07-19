@@ -107,6 +107,26 @@ class NullaryIndex : public LVMIndex {
         }
     };
 
+    // The nullary index view -- does not require any hints.
+    struct NullaryIndexView : public IndexView {
+
+    	const NullaryIndex& index;
+
+    	NullaryIndexView(const NullaryIndex& index) : index(index) {}
+
+    	bool contains(const TupleRef& entry) const override {
+    		return index.contains(entry);
+    	}
+
+        bool contains(const TupleRef& low, const TupleRef& high) const override {
+        	return index.contains(low, high);
+        }
+
+        Stream range(const TupleRef& low, const TupleRef& high) const override {
+        	return index.range(low, high);
+        }
+    };
+
 public:
     size_t getArity() const override {
         return 0;
@@ -118,6 +138,10 @@ public:
 
     std::size_t size() const override {
         return present ? 1 : 0;
+    }
+
+    IndexViewPtr createView() const {
+    	return std::make_unique<NullaryIndexView>(*this);
     }
 
     bool insert(const TupleRef& tuple) override {
@@ -176,6 +200,7 @@ public:
 template <typename Structure>
 class GenericIndex : public LVMIndex {
     using Entry = typename Structure::element_type;
+    using Hints = typename Structure::operation_hints;
     static constexpr int Arity = Entry::arity;
 
     // the order to be simulated
@@ -218,8 +243,34 @@ class GenericIndex : public LVMIndex {
         }
     };
 
+    // The index view associated to this view type.
+    struct GenericIndexView : public IndexView {
+
+    	const GenericIndex& index;
+    	mutable Hints hints;
+
+    	GenericIndexView(const GenericIndex& index) : index(index) {}
+
+    	bool contains(const TupleRef& tuple) const override {
+    		return index.data.contains(index.order.encode(tuple.asTuple<Arity>()), hints);
+    	}
+
+        bool contains(const TupleRef& low, const TupleRef& high) const override {
+        	return !index.bounds(low, high, hints).empty();
+        }
+
+        Stream range(const TupleRef& low, const TupleRef& high) const override {
+        	auto range = index.bounds(low, high, hints);
+			return std::make_unique<Source>(index.order, range.begin(), range.end());
+        }
+    };
+
 public:
     GenericIndex(const Order& order) : order(order) {}
+
+    IndexViewPtr createView() const override {
+    	return std::make_unique<GenericIndexView>(*this);
+    }
 
     size_t getArity() const override {
         return Arity;
@@ -245,11 +296,11 @@ public:
     }
 
     bool contains(const TupleRef& tuple) const override {
-        return data.contains(order.encode(tuple.asTuple<Arity>()));
+    	return GenericIndexView(*this).contains(tuple);
     }
 
     bool contains(const TupleRef& low, const TupleRef& high) const override {
-        return !bounds(low, high).empty();
+    	return GenericIndexView(*this).contains(low, high);
     }
 
     Stream scan() const override {
@@ -267,7 +318,7 @@ public:
     }
 
 private:
-    souffle::range<iter> bounds(const TupleRef& low, const TupleRef& high) const {
+    souffle::range<iter> bounds(const TupleRef& low, const TupleRef& high, Hints& hints) const {
         Entry a = order.encode(low.asTuple<Arity>());
         Entry b = order.encode(high.asTuple<Arity>());
         // Transfer upper_bound to a equivalent lower bound
@@ -286,17 +337,17 @@ private:
         if (fullIndexSearch) {
             b[0] = MAX_RAM_DOMAIN;
         }
-        return {data.lower_bound(a), data.lower_bound(b)};
+        return {data.lower_bound(a,hints), data.lower_bound(b,hints)};
     }
 
 public:
     Stream range(const TupleRef& low, const TupleRef& high) const override {
-        auto range = bounds(low, high);
-        return std::make_unique<Source>(order, range.begin(), range.end());
+    	return GenericIndexView(*this).range(low, high);
     }
 
     PartitionedStream prange(const TupleRef& low, const TupleRef& high, int num_partitions) const override {
-        auto range = bounds(low, high);
+    	Hints hints;
+        auto range = bounds(low, high, hints);
         std::vector<Stream> res;
         res.reserve(num_partitions);
         for (const auto& cur : range.partition(num_partitions)) {
@@ -349,6 +400,10 @@ public:
         }
     };
 
+    /* btree for storing tuple pointers with a given lexicographical order */
+    using index_set = btree_multiset<TupleRef, comparator, std::allocator<TupleRef>, 512>;
+    using Hints = typename index_set::operation_hints;
+
     class Source : public Stream::Source {
         // the begin and end of the stream
         using iter = btree_multiset<TupleRef, comparator, std::allocator<TupleRef>, 512>::iterator;
@@ -379,12 +434,35 @@ public:
         }
     };
 
-    /* btree for storing tuple pointers with a given lexicographical order */
-    using index_set = btree_multiset<TupleRef, comparator, std::allocator<TupleRef>, 512>;
+    // The index view associated to this view type.
+    struct IndirectIndexView : public IndexView {
+
+    	const IndirectIndex& index;
+    	mutable Hints hints;
+
+    	IndirectIndexView(const IndirectIndex& index) : index(index) {}
+
+    	bool contains(const TupleRef& tuple) const override {
+    		return index.set.contains(tuple, hints);
+    	}
+
+        bool contains(const TupleRef& low, const TupleRef& high) const override {
+        	assert(false && "Not implemented!");
+			return false;
+        }
+
+        Stream range(const TupleRef& low, const TupleRef& high) const override {
+        	return std::make_unique<Source>(index.set.lower_bound(low, hints), index.set.upper_bound(high, hints));
+        }
+    };
 
     IndirectIndex(std::vector<int> order)
             : theOrder(std::move(order)), set(comparator(theOrder), comparator(theOrder)),
               arity(order.size()) {}
+
+    IndexViewPtr createView() const override {
+    	return std::make_unique<IndirectIndexView>(*this);
+    }
 
     size_t getArity() const override {
         return arity;
@@ -409,12 +487,11 @@ public:
     }
 
     bool contains(const TupleRef& tuple) const override {
-        return set.contains(tuple);
+    	return IndirectIndexView(*this).contains(tuple);
     }
 
     bool contains(const TupleRef& low, const TupleRef& high) const override {
-        assert(false && "Not implemented!");
-        return false;
+        return IndirectIndexView(*this).contains(low, high);
     }
 
     Stream scan() const override {
@@ -429,7 +506,7 @@ public:
     }
 
     Stream range(const TupleRef& low, const TupleRef& high) const override {
-        return std::make_unique<Source>(set.lower_bound(low), set.upper_bound(high));
+        return IndirectIndexView(*this).range(low, high);
     }
 
     PartitionedStream prange(const TupleRef& low, const TupleRef& high, int) const override {
@@ -509,6 +586,7 @@ std::unique_ptr<LVMIndex> createBTreeIndex(const Order& order) {
             return std::make_unique<BTreeIndex<12>>(order);
     }
     assert(false && "Requested arity not yet supported. Feel free to add it.");
+    return {};
 }
 
 std::unique_ptr<LVMIndex> createBrieIndex(const Order& order) {
@@ -541,6 +619,7 @@ std::unique_ptr<LVMIndex> createBrieIndex(const Order& order) {
             return std::make_unique<BrieIndex<12>>(order);
     }
     assert(false && "Requested arity not yet supported. Feel free to add it.");
+    return {};
 }
 
 std::unique_ptr<LVMIndex> createIndirectIndex(const Order& order) {

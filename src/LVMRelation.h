@@ -83,6 +83,11 @@ public:
     void removeIndex(const size_t& indexPos);
 
     /**
+     * Obtains a view on an index of this relation, facilitating hint-supported accesses.
+     */
+    IndexViewPtr getView(const size_t& indexPos) const;
+
+    /**
      * Add the given tuple to this relation.
      */
     virtual bool insert(const TupleRef& tuple);

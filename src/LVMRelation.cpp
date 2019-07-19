@@ -49,6 +49,11 @@ void LVMRelation::removeIndex(const size_t& indexPos) {
     indexes[indexPos].reset(nullptr);
 }
 
+IndexViewPtr LVMRelation::getView(const size_t& indexPos) const {
+	assert(indexPos < indexes.size());
+	return indexes[indexPos]->createView();
+}
+
 bool LVMRelation::insert(const TupleRef& tuple) {
     if (!main->insert(tuple)) return false;
     for (const auto& cur : indexes) {
