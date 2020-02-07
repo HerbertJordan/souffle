@@ -55,7 +55,6 @@ std::unique_ptr<AstTranslationUnit> ParserDriver::parse(const std::string& filen
     yyset_in(in, scanner);
 
     yy::parser parser(*this, scanner);
-    parser.set_debug_level(trace_parsing);
     parser.parse();
 
     yylex_destroy(scanner);
@@ -76,7 +75,6 @@ std::unique_ptr<AstTranslationUnit> ParserDriver::parse(const std::string& code,
     yylex_init_extra(&data, &scanner);
     yy_scan_string(code.c_str(), scanner);
     yy::parser parser(*this, scanner);
-    parser.set_debug_level(trace_parsing);
     parser.parse();
 
     yylex_destroy(scanner);

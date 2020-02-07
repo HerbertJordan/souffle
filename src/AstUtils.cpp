@@ -99,4 +99,35 @@ bool hasClauseWithAggregatedRelation(const AstRelation* relation, const AstRelat
     return false;
 }
 
+bool isRecursiveClause(const AstClause& clause) {
+    AstRelationIdentifier relationName = clause.getHead()->getName();
+    bool recursive = false;
+    visitDepthFirst(clause.getBodyLiterals(), [&](const AstAtom& atom) {
+        if (atom.getName() == relationName) {
+            recursive = true;
+        }
+    });
+    return recursive;
+}
+
+bool isFact(const AstClause& clause) {
+    // there must be a head
+    if (clause.getHead() == nullptr) {
+        return false;
+    }
+    // there must not be any body clauses
+    if (clause.getBodySize() != 0) {
+        return false;
+    }
+
+    // and there are no aggregates
+    bool hasAggregates = false;
+    visitDepthFirst(*clause.getHead(), [&](const AstAggregator& cur) { hasAggregates = true; });
+    return !hasAggregates;
+}
+
+bool isRule(const AstClause& clause) {
+    return (clause.getHead() != nullptr) && !isFact(clause);
+}
+
 }  // end of namespace souffle

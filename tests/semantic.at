@@ -85,10 +85,13 @@ m4_define([POSITIVE_TEST_SQLITE3],[
 
 ##########################################################################
 
-NEGATIVE_TEST([agg_checks2],[semantic])
 NEGATIVE_TEST([agg_checks],[semantic])
+NEGATIVE_TEST([agg_checks2],[semantic])
+POSITIVE_TEST([agg_checks3],[semantic])
 POSITIVE_TEST([aggregate1],[semantic])
 POSITIVE_TEST([aggregate2],[semantic])
+POSITIVE_TEST([aggregate3],[semantic])
+NEGATIVE_TEST([agg_nested],[semantic])
 POSITIVE_TEST([alias],[semantic])
 NEGATIVE_TEST([attrib_dupl],[semantic])
 POSITIVE_TEST([bin1],[semantic])
@@ -146,7 +149,6 @@ POSITIVE_TEST([negative_numbers],[semantic])
 POSITIVE_TEST([not_copy1],[semantic])
 POSITIVE_TEST([not_copy2],[semantic])
 POSITIVE_TEST([not_copy],[semantic])
-NEGATIVE_TEST([number_constants],[semantic])
 NEGATIVE_TEST([plan1],[semantic])
 NEGATIVE_TEST([plan2],[semantic])
 POSITIVE_TEST([progmin1],[semantic])

@@ -8,9 +8,9 @@
 
 /************************************************************************
  *
- * @file type_system_test.h
+ * @file ast_utils_test.cpp
  *
- * Tests souffle's type system operations.
+ * Tests souffle's AST utils.
  *
  ***********************************************************************/
 
@@ -27,30 +27,6 @@
 namespace souffle {
 
 namespace test {
-
-TEST(Ast, CloneAndEquals) {
-    // TODO: add test for records
-    SymbolTable sym;
-    ErrorReport e;
-    DebugReport d;
-
-    // load some test program
-    std::unique_ptr<AstTranslationUnit> tu = ParserDriver::parseTranslationUnit(
-            R"(
-                 .decl r(a:number,b:number,c:number,d:number)
-                 r(X,Y,Z,W) :- a(X), 10 = Y, Y = Z, 8 + W = 12 + 14.
-            )",
-            sym, e, d);
-    AstProgram& program = *tu->getProgram();
-
-    EXPECT_EQ(program, program);
-
-    // clone and check for equality
-    AstProgram* clone = program.clone();
-    EXPECT_NE(clone, &program);
-    EXPECT_EQ(*clone, program);
-    delete clone;
-}
 
 TEST(AstUtils, Grounded) {
     // create an example clause:
@@ -480,7 +456,8 @@ TEST(AstUtils, RemoveRelationCopiesOutput) {
                 .type D = number
                 .decl a(a:D,b:D)
                 .decl b(a:D,b:D)
-                .decl c(a:D,b:D) output
+                .decl c(a:D,b:D)
+                .output c
                 .decl d(a:D,b:D)
 
                 a(1,2).

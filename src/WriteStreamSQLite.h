@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "RamTypes.h"
 #include "SymbolTable.h"
 #include "WriteStream.h"
 
@@ -29,8 +30,9 @@ namespace souffle {
 class WriteStreamSQLite : public WriteStream {
 public:
     WriteStreamSQLite(const std::string& dbFilename, const std::string& relationName,
-            const std::vector<bool>& symbolMask, const SymbolTable& symbolTable, const bool provenance)
-            : WriteStream(symbolMask, symbolTable, provenance), dbFilename(dbFilename),
+            const std::vector<RamTypeAttribute>& symbolMask, const SymbolTable& symbolTable,
+            const size_t auxiliaryArity)
+            : WriteStream(symbolMask, symbolTable, auxiliaryArity), dbFilename(dbFilename),
               relationName(relationName) {
         openDB();
         createTables();
@@ -50,12 +52,20 @@ protected:
 
     void writeNextTuple(const RamDomain* tuple) override {
         for (size_t i = 0; i < arity; i++) {
-            RamDomain value;
-            if (symbolMask.at(i)) {
-                value = getSymbolTableID(tuple[i]);
-            } else {
-                value = tuple[i];
+            RamDomain value = 0;  // Silence warning
+
+            switch (symbolMask.at(i)) {
+                case RamTypeAttribute::Symbol:
+                    value = getSymbolTableID(tuple[i]);
+                    break;
+                case RamTypeAttribute::Signed:
+                case RamTypeAttribute::Unsigned:
+                case RamTypeAttribute::Float:
+                case RamTypeAttribute::Record:
+                    value = tuple[i];
+                    break;
             }
+
 #if RAM_DOMAIN_SIZE == 64
             if (sqlite3_bind_int64(insertStatement, i + 1, value) != SQLITE_OK) {
 #else
@@ -214,9 +224,7 @@ private:
             if (i != 0) {
                 projectionClause << ",";
             }
-            if (!symbolMask.at(i)) {
-                projectionClause << "'_" << relationName << "'.'" << columnName << "'";
-            } else {
+            if (symbolMask.at(i) == RamTypeAttribute::Symbol) {
                 projectionClause << "'_symtab_" << columnName << "'.symbol AS '" << columnName << "'";
                 fromClause << ",'" << symbolTableName << "' AS '_symtab_" << columnName << "'";
                 if (!firstWhere) {
@@ -226,6 +234,8 @@ private:
                 }
                 whereClause << "'_" << relationName << "'.'" << columnName << "' = "
                             << "'_symtab_" << columnName << "'.id";
+            } else {
+                projectionClause << "'_" << relationName << "'.'" << columnName << "'";
             }
         }
         createViewText << "SELECT " << projectionClause.str() << " FROM " << fromClause.str();
@@ -255,12 +265,13 @@ private:
 
 class WriteSQLiteFactory : public WriteStreamFactory {
 public:
-    std::unique_ptr<WriteStream> getWriter(const std::vector<bool>& symbolMask,
+    std::unique_ptr<WriteStream> getWriter(const std::vector<RamTypeAttribute>& symbolMask,
             const SymbolTable& symbolTable, const IODirectives& ioDirectives,
-            const bool provenance) override {
+            const size_t auxiliaryArity) override {
         std::string dbName = ioDirectives.get("dbname");
         std::string relationName = ioDirectives.getRelationName();
-        return std::make_unique<WriteStreamSQLite>(dbName, relationName, symbolMask, symbolTable, provenance);
+        return std::make_unique<WriteStreamSQLite>(
+                dbName, relationName, symbolMask, symbolTable, auxiliaryArity);
     }
     const std::string& getName() const override {
         static const std::string name = "sqlite";

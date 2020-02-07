@@ -22,7 +22,9 @@ Options:
   -l           additional shared libraries
   -L           library paths
   -v           verbose output
-  -w           enable warnings\n"
+  -w           enable warnings
+  -s <value>   Use SWIG interface to generate into <value> language\n"
+
   exit 1;
 }
 
@@ -42,11 +44,9 @@ error() {
 #Exit on error
 set -e
 
-## set environment variables
-
 # set by autoconf
 CXX="$(printenv CXX || true)"
-test -z "$CXX" && CXX=@CXX@
+test -z "$CXX" && CXX="@CXX@"
 CPPFLAGS="$(printenv CPPFLAGS || true) @CPPFLAGS@"
 CXXFLAGS="$(printenv CXXFLAGS || true) @SOUFFLE_CXXFLAGS@ -march=native"
 LDFLAGS="$(printenv LDFLAGS || true) @LDFLAGS@"
@@ -54,16 +54,17 @@ LIBS="$(printenv LIBS || true) @LIBS@"
 
 # set by command flags
 WARNINGS=""
+SWIGLANG=""
 
 # find header files of souffle
-TEST_HEADER="souffle/CompiledRelation.h"
+TEST_HEADER="souffle/CompiledSouffle.h"
 HEADER_DIR=$(dirname $0)/../include
 test -f "$HEADER_DIR/$TEST_HEADER"
 error "installation error: souffle header files cannot be found" $?
 
 # Options processing via getopts builtin, it is very limiting but on OSX the
 # default getopt is an old BSD getopt, so need this for portability
-while getopts "hwl:L:vg" opt; do
+while getopts "hwl:L:vgs:" opt; do
   case "$opt" in
     h|\?) # Show usage and exit
       usage;
@@ -82,6 +83,9 @@ while getopts "hwl:L:vg" opt; do
     ;;
     v) # Verbose output
       set -x
+    ;;
+    s) # Set swig language
+      SWIGLANG="${OPTARG}";
     ;;
   esac
 done
@@ -106,6 +110,50 @@ error "source file is not a .cpp file: '$1'" $?
 cd "$(dirname $1)"
 dir="$PWD"
 cd "$OLDPWD"
+
+# Make temp folder and copy relavent files there
+if [ -n "$SWIGLANG" ]
+then
+  # set environment variables
+  # directory where swig interface files are in souffle
+  SWIGDIR=$(dirname $0)/../include/souffle/swig
+  TMP_DIR="$(mktemp -d)"
+
+  for file in `ls -1 "$SWIGDIR"`
+  do
+    cp "$SWIGDIR/$file" "$TMP_DIR"
+  done
+  
+  cd "$TMP_DIR"
+  swig -c++ -"$SWIGLANG" "SwigInterface.i"
+
+  # Checks input language and compiles files with local python3 config or local java_home config
+  if [ "$SWIGLANG" = "python" ]
+  then
+    $CXX -fPIC -c -D__EMBEDDED_SOUFFLE__ SwigInterface.cpp SwigInterface_wrap.cxx $dir/$exe.cpp $(python3-config --cflags) -I$HEADER_DIR 2>&1
+    $CXX -shared SwigInterface.o SwigInterface_wrap.o $exe.o $(python3-config --ldflags) -o _SwigInterface.so -lstdc++
+  elif [ "$SWIGLANG" = "java" ]
+  then
+    JAVADIR="$(printenv JAVA_HOME || java -XshowSettings:properties -version 2>&1 | grep java.home | sed 's/^.*= //')"
+
+    if [ -z "$JAVADIR" ]
+    then
+      error "JAVA_HOME environment variable has not been set"
+    fi
+
+    $CXX -fPIC -c -D__EMBEDDED_SOUFFLE__ SwigInterface.cpp SwigInterface_wrap.cxx $dir/$exe.cpp -I$JAVADIR -I$JAVADIR/include -I$JAVADIR/include/linux  -I$JAVADIR/include/darwin -I/usr/lib/x86_64-linux-gnu/ -I$HEADER_DIR 2>&1
+    $CXX -shared SwigInterface.o SwigInterface_wrap.o $exe.o -o libSwigInterface.so -lstdc++
+  fi
+
+  # move generated files to same directory as cpp file
+  for file in `ls | grep -v "SwigInterface.i" | grep -v "SwigInterface.h" | grep -v "SwigInterface.cpp"`
+  do
+    mv "$file" "$dir"
+  done
+  
+  rm -rf "$TMP_DIR"
+  exit 0
+fi
 
 # Compile
 rm -f $dir/$exe

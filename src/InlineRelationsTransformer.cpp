@@ -135,7 +135,7 @@ void nameInlinedUnderscores(AstProgram& program) {
                         return node;
                     }
                 }
-            } else if (dynamic_cast<AstUnnamedVariable*>(node.get())) {
+            } else if (dynamic_cast<AstUnnamedVariable*>(node.get()) != nullptr) {
                 // Give a unique name to the underscored variable
                 // TODO (azreika): need a more consistent way of handling internally generated variables in
                 // general
@@ -184,8 +184,8 @@ bool containsInlinedAtom(const AstProgram& program, const AstClause& clause) {
  */
 bool reduceSubstitution(std::vector<std::pair<AstArgument*, AstArgument*>>& sub) {
     // Type-Checking functions
-    auto isConstant = [&](AstArgument* arg) { return (dynamic_cast<AstConstant*>(arg)); };
-    auto isRecord = [&](AstArgument* arg) { return (dynamic_cast<AstRecordInit*>(arg)); };
+    auto isConstant = [&](AstArgument* arg) { return dynamic_cast<AstConstant*>(arg) != nullptr; };
+    auto isRecord = [&](AstArgument* arg) { return dynamic_cast<AstRecordInit*>(arg) != nullptr; };
 
     // Keep trying to reduce the substitutions until we reach a fixed point.
     // Note that at this point no underscores ('_') or counters ('$') should appear.
@@ -610,7 +610,7 @@ NullableVector<AstArgument*> getInlinedArgument(AstProgram& program, const AstAr
                 }
             }
         }
-    } else if (dynamic_cast<const AstFunctor*>(arg)) {
+    } else if (dynamic_cast<const AstFunctor*>(arg) != nullptr) {
         if (const auto* functor = dynamic_cast<const AstIntrinsicFunctor*>(arg)) {
             for (size_t i = 0; i < functor->getArity(); i++) {
                 // TODO (azreika): use unique pointers
@@ -629,9 +629,22 @@ NullableVector<AstArgument*> getInlinedArgument(AstProgram& program, const AstAr
                     break;
                 }
             }
-        } else if (dynamic_cast<const AstUserDefinedFunctor*>(arg)) {
-            // TODO (azreika): extend to handle user-defined functors
-            assert(false && "unhandled argument: AstUserDefinedFunctor");
+        } else if (const auto* udf = dynamic_cast<const AstUserDefinedFunctor*>(arg)) {
+            for (size_t i = 0; i < udf->getArity(); i++) {
+                // try inlining each argument from left to right
+                NullableVector<AstArgument*> argumentVersions = getInlinedArgument(program, udf->getArg(i));
+                if (argumentVersions.isValid()) {
+                    changed = true;
+                    for (AstArgument* newArgVersion : argumentVersions.getVector()) {
+                        // same functor but with new argument version
+                        AstUserDefinedFunctor* newFunctor = udf->clone();
+                        newFunctor->setArg(i, std::unique_ptr<AstArgument>(newArgVersion));
+                        versions.push_back(newFunctor);
+                    }
+                    // only one step at a time
+                    break;
+                }
+            }
         }
     } else if (const auto* cast = dynamic_cast<const AstTypeCast*>(arg)) {
         NullableVector<AstArgument*> argumentVersions = getInlinedArgument(program, cast->getValue());

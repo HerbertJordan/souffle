@@ -1,0 +1,96 @@
+# Souffle - A Datalog Compiler
+# Copyright (c) 2019, The Souffle Developers. All rights reserved
+# Licensed under the Universal Permissive License v 1.0 as shown at:
+# - https://opensource.org/licenses/UPL
+# - <souffle root>/licenses/SOUFFLE-UPL.txt
+
+m4_define([SWIG_LANGUAGES], [[java],
+  [python]])
+
+dnl Run driver program for given language to output csv files
+dnl $1 current testsuite directory
+dnl $2 language
+dnl $3 test name
+dnl $4 facts directory
+m4_define([LANGUAGE_TEST],[
+  m4_if($2, java, [
+    javac *.java
+    AT_CHECK([java -Djava.library.path=$1 driver $4 1>$3-$2.out 2>>$3-$2.err], [0])
+  ])
+
+  m4_if($2, python, [
+    AT_CHECK([python3 driver.py $4 1>$3-$2.out 2>>$3-$2.err], [0])
+  ])
+])
+
+dnl Positive testcase for invoking souffle with SWIG option given language and test name
+dnl $1 test name
+dnl $2 category
+dnl $3 language
+m4_define([TEST_EVAL_SWIG],[
+  m4_define([TESTNAME],[$1])
+  m4_define([CATEGORY],[$2])
+  m4_define([LANGUAGE],[$3])
+  m4_define([TESTDIR],["$TESTS"/CATEGORY/LANGUAGE/TESTNAME])
+  m4_define([PROGRAM],[TESTDIR/TESTNAME.dl])
+  m4_define([FACTS],[TESTDIR/facts])
+  m4_define([CURRENTDIR],[`pwd`])
+
+  cp TESTDIR/driver.* .
+  AT_CHECK(["$SOUFFLE" -s LANGUAGE PROGRAM 1>TESTNAME.out 2>TESTNAME.err], [0])
+  LANGUAGE_TEST([CURRENTDIR],[LANGUAGE],[TESTNAME],[FACTS])
+
+  SORTED_SAME_FILES([*.csv],[TESTDIR])
+])
+
+dnl Positive testcase for SWIG
+dnl $1 test name
+dnl $2 category
+m4_define([POSITIVE_SWIG_TEST],[
+  m4_foreach([LANGUAGE],[SWIG_LANGUAGES],[
+    AT_SETUP([$1 LANGUAGE])
+    TEST_EVAL_SWIG([$1],[$2],LANGUAGE)
+    AT_CLEANUP([])
+    ])
+  ])
+])
+
+dnl Positive testcase for invoking souffle with SWIG option given language and test name
+dnl $1 test name
+dnl $2 category
+dnl $3 language
+m4_define([TEST_EVAL_SWIG_WITH_STDOUT],[
+  m4_define([TESTNAME],[$1])
+  m4_define([CATEGORY],[$2])
+  m4_define([LANGUAGE],[$3])
+  m4_define([TESTDIR],["$TESTS"/CATEGORY/LANGUAGE/TESTNAME])
+  m4_define([PROGRAM],[TESTDIR/TESTNAME.dl])
+  m4_define([FACTS],[TESTDIR/facts])
+  m4_define([CURRENTDIR],[`pwd`])
+
+  cp TESTDIR/driver.* .
+  AT_CHECK(["$SOUFFLE" -s LANGUAGE PROGRAM 1>TESTNAME.out 2>TESTNAME.err], [0])
+  LANGUAGE_TEST([CURRENTDIR],[LANGUAGE],[TESTNAME],[FACTS])
+
+  SORTED_SAME_FILE([TESTNAME-LANGUAGE.out],[TESTDIR/TESTNAME-LANGUAGE.out])  
+])
+
+dnl Positive testcase for SWIG
+dnl $1 test name
+dnl $2 category
+m4_define([POSITIVE_SWIG_TEST_WITH_STDOUT],[
+  m4_foreach([LANGUAGE],[SWIG_LANGUAGES],[
+    AT_SETUP([$1 LANGUAGE])
+    TEST_EVAL_SWIG_WITH_STDOUT([$1],[$2],LANGUAGE)
+    AT_CLEANUP([])
+    ])
+  ])
+])
+
+POSITIVE_SWIG_TEST_WITH_STDOUT([dump_output],[swig])
+POSITIVE_SWIG_TEST_WITH_STDOUT([dump_input],[swig])
+POSITIVE_SWIG_TEST([family],[swig])
+POSITIVE_SWIG_TEST([flights],[swig])
+POSITIVE_SWIG_TEST([insert_for],[swig])
+POSITIVE_SWIG_TEST([movies],[swig])
+POSITIVE_SWIG_TEST([paths],[swig])

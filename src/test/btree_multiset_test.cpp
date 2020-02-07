@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <unordered_set>
@@ -199,7 +200,10 @@ TEST(BTreeMultiSet, Shuffled) {
     for (int i = 0; i < N; i++) {
         data.push_back(i);
     }
-    random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     for (int i = 0; i < N; i++) {
         t.insert(data[i]);
@@ -251,7 +255,10 @@ TEST(BTreeMultiSet, IteratorStress) {
     for (int i = 0; i < N; i++) {
         data.push_back(i);
     }
-    random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     for (int i = 0; i < N; i++) {
         EXPECT_EQ((size_t)i, t.size());
@@ -380,7 +387,10 @@ std::vector<Entry> getData(unsigned numEntries) {
     for (unsigned i = 0; i < numEntries; i++) {
         res[k++] = Entry(i / 100, i % 100);
     }
-    random_shuffle(res.begin(), res.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(res.begin(), res.end(), generator);
     return res;
 }
 

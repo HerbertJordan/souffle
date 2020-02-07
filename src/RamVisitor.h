@@ -82,7 +82,10 @@ struct RamVisitor : public ram_visitor_tag {
 
         // Expressions
         FORWARD(TupleElement);
-        FORWARD(Number);
+        FORWARD(SignedConstant);
+        FORWARD(UnsignedConstant);
+        FORWARD(FloatConstant);
+        FORWARD(Constant);
         FORWARD(IntrinsicOperator);
         FORWARD(UserDefinedOperator);
         FORWARD(AutoIncrement);
@@ -118,17 +121,14 @@ struct RamVisitor : public ram_visitor_tag {
         FORWARD(IndexAggregate);
 
         // Statements
-        FORWARD(Create);
-        FORWARD(Fact);
         FORWARD(Load);
         FORWARD(Store);
         FORWARD(Query);
         FORWARD(Clear);
-        FORWARD(Drop);
         FORWARD(LogSize);
 
-        FORWARD(Merge);
         FORWARD(Swap);
+        FORWARD(Extend);
 
         // Control-flow
         FORWARD(Program);
@@ -139,15 +139,6 @@ struct RamVisitor : public ram_visitor_tag {
         FORWARD(LogTimer);
         FORWARD(LogRelationTimer);
         FORWARD(DebugInfo);
-        FORWARD(Stratum);
-
-#ifdef USE_MPI
-        // mpi
-        FORWARD(Send);
-        FORWARD(Recv);
-        FORWARD(Notify);
-        FORWARD(Wait);
-#endif
 
 #undef FORWARD
 
@@ -169,20 +160,17 @@ protected:
     }
 
     // -- statements --
-    LINK(Create, RelationStatement);
-    LINK(Fact, RelationStatement);
     LINK(Load, AbstractLoadStore);
     LINK(Store, AbstractLoadStore);
     LINK(AbstractLoadStore, RelationStatement);
     LINK(Query, Statement);
     LINK(Clear, RelationStatement);
-    LINK(Drop, RelationStatement);
     LINK(LogSize, RelationStatement);
 
     LINK(RelationStatement, Statement);
 
-    LINK(Merge, BinRelationStatement);
     LINK(Swap, BinRelationStatement);
+    LINK(Extend, BinRelationStatement);
     LINK(BinRelationStatement, Statement);
 
     LINK(Sequence, ListStatement);
@@ -193,7 +181,6 @@ protected:
     LINK(LogTimer, Statement);
     LINK(LogRelationTimer, Statement);
     LINK(DebugInfo, Statement);
-    LINK(Stratum, Statement);
 
     LINK(Statement, Node);
 
@@ -235,7 +222,10 @@ protected:
     LINK(Condition, Node);
 
     // -- values --
-    LINK(Number, Expression);
+    LINK(SignedConstant, Constant);
+    LINK(UnsignedConstant, Constant);
+    LINK(FloatConstant, Constant);
+    LINK(Constant, Expression);
     LINK(UndefValue, Expression);
     LINK(TupleElement, Expression);
     LINK(IntrinsicOperator, AbstractOperator);
@@ -253,13 +243,6 @@ protected:
     // -- relation
     LINK(Relation, Node);
     LINK(RelationReference, Node);
-
-#ifdef USE_MPI
-    LINK(Send, RelationStatement);
-    LINK(Recv, RelationStatement);
-    LINK(Notify, Statement);
-    LINK(Wait, Statement);
-#endif
 
 #undef LINK
 
@@ -332,7 +315,7 @@ LambdaRamVisitor<R, N> makeLambdaRamVisitor(const std::function<R(const N&)>& fu
  */
 template <typename T>
 struct is_ram_visitor {
-    enum { value = std::is_base_of<ram_visitor_tag, T>::value };
+    static constexpr size_t value = std::is_base_of<ram_visitor_tag, T>::value;
 };
 
 template <typename T>

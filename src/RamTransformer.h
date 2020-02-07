@@ -50,7 +50,6 @@ class RamTranslationUnit;
 
 class RamTransformer {
 public:
-    RamTransformer() = default;
     virtual ~RamTransformer() = default;
 
     /**
@@ -62,9 +61,7 @@ public:
 
     /**
      * @Brief get name of the transformer
-     * @Return flag reporting whether the RAM program has changed
      */
-    /** Get name of transformer */
     virtual std::string getName() const = 0;
 
 protected:
@@ -77,6 +74,12 @@ protected:
 };
 
 /**
+ * @Class RamMetaTransformer
+ * @Brief Abstract class to identifier meta transformer
+ */
+class RamMetaTransformer : public RamTransformer {};
+
+/**
  * @Class RamTransformerSequence
  * @Brief Composite sequence transformer
  *
@@ -85,7 +88,7 @@ protected:
  * the code has been changed.
  *
  */
-class RamTransformerSequence : public RamTransformer {
+class RamTransformerSequence : public RamMetaTransformer {
 public:
     template <typename... Tfs>
     RamTransformerSequence(std::unique_ptr<Tfs>&&... tf) : RamTransformerSequence() {
@@ -126,7 +129,7 @@ protected:
  * A transformation is invoked iteratively until no further change
  * is made.
  */
-class RamLoopTransformer : public RamTransformer {
+class RamLoopTransformer : public RamMetaTransformer {
 public:
     RamLoopTransformer(std::unique_ptr<RamTransformer> tLoop) : loop(std::move(tLoop)) {}
     std::string getName() const override {
@@ -151,7 +154,7 @@ protected:
  *
  * A transformation is invoked if a condition holds.
  */
-class RamConditionalTransformer : public RamTransformer {
+class RamConditionalTransformer : public RamMetaTransformer {
 public:
     RamConditionalTransformer(std::function<bool()> fn, std::unique_ptr<RamTransformer> tb)
             : func(std::move(fn)), body(std::move(tb)) {}

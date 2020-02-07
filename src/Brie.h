@@ -36,6 +36,16 @@
 #include <iterator>
 #include <utility>
 
+#ifdef _WIN32
+/**
+ * When compiling for windows, redefine the gcc builtins which are used to
+ * their equivalents on the windows platform.
+ */
+#define __sync_synchronize MemoryBarrier
+#define __sync_bool_compare_and_swap(ptr, oldval, newval) \
+    (InterlockedCompareExchangePointer((void* volatile*)ptr, (void*)newval, (void*)oldval) == (void*)oldval)
+#endif  // _WIN32
+
 namespace souffle {
 
 namespace detail {
@@ -112,9 +122,9 @@ class SparseArray {
     using key_type = uint64_t;
 
     // some internal constants
-    static const int BIT_PER_STEP = BITS;
-    static const int NUM_CELLS = 1 << BIT_PER_STEP;
-    static const key_type INDEX_MASK = NUM_CELLS - 1;
+    static constexpr int BIT_PER_STEP = BITS;
+    static constexpr int NUM_CELLS = 1 << BIT_PER_STEP;
+    static constexpr key_type INDEX_MASK = NUM_CELLS - 1;
 
 public:
     // the type utilized for indexing contained elements
@@ -235,7 +245,9 @@ public:
         // copy content
         unsynced.levels = other.unsynced.levels;
         unsynced.root = clone(other.unsynced.root, unsynced.levels);
-        if (unsynced.root) unsynced.root->parent = nullptr;
+        if (unsynced.root) {
+            unsynced.root->parent = nullptr;
+        }
         unsynced.offset = other.unsynced.offset;
         unsynced.first = (unsynced.root) ? findFirst(unsynced.root, unsynced.levels) : nullptr;
         unsynced.firstOffset = other.unsynced.firstOffset;
@@ -384,7 +396,7 @@ private:
      * Obtains a snapshot of the current root information.
      */
     RootInfoSnapshot getRootInfo() const {
-        RootInfoSnapshot res;
+        RootInfoSnapshot res{};
         do {
             // first take the mod counter
             do {
@@ -458,7 +470,7 @@ private:
      * Obtains a snapshot of the current first-node information.
      */
     FirstInfoSnapshot getFirstInfo() const {
-        FirstInfoSnapshot res;
+        FirstInfoSnapshot res{};
         do {
             // first take the version
             do {
@@ -649,13 +661,13 @@ private:
                         // fast over-approximation of whether a update is necessary
                         if (off < unsynced.firstOffset) {
                             // update first reference if this one is the smallest
-                            auto info = getFirstInfo();
-                            while (off < info.offset) {
-                                info.node = next;
-                                info.offset = off;
-                                if (!tryUpdateFirstInfo(info)) {
+                            auto first_info = getFirstInfo();
+                            while (off < first_info.offset) {
+                                first_info.node = next;
+                                first_info.offset = off;
+                                if (!tryUpdateFirstInfo(first_info)) {
                                     // there was some concurrent update => check again
-                                    info = getFirstInfo();
+                                    first_info = getFirstInfo();
                                 }
                             }
                         }
@@ -722,10 +734,10 @@ public:
      */
     value_type lookup(index_type i, op_context& ctxt) const {
         // check whether it is empty
-        if (!unsynced.root) return detail::default_factory<value_type>()();
+        if (!unsynced.root) return souffle::detail::default_factory<value_type>()();
 
         // check boundaries
-        if (!inBoundaries(i)) return detail::default_factory<value_type>()();
+        if (!inBoundaries(i)) return souffle::detail::default_factory<value_type>()();
 
         // check context
         if (ctxt.lastNode && ctxt.lastIndex == (i & ~INDEX_MASK)) {
@@ -746,7 +758,7 @@ public:
             Node* next = node->cell[x].ptr;
 
             // check next step
-            if (!next) return detail::default_factory<value_type>()();
+            if (!next) return souffle::detail::default_factory<value_type>()();
 
             // continue one level below
             node = next;
@@ -771,12 +783,16 @@ private:
      */
     static void merge(const Node* parent, Node*& trg, const Node* src, int levels) {
         // if other side is null => done
-        if (!src) return;
+        if (src == nullptr) {
+            return;
+        }
 
         // if the trg sub-tree is empty, clone the corresponding branch
         if (trg == nullptr) {
             trg = clone(src, levels);
-            if (trg) trg->parent = parent;
+            if (trg != nullptr) {
+                trg->parent = parent;
+            }
             return;  // done
         }
 
@@ -858,7 +874,7 @@ public:
     /**
      * The iterator type to be utilized to iterate over the non-default elements of this array.
      */
-    class iterator : public std::iterator<std::forward_iterator_tag, std::pair<index_type, value_type>> {
+    class iterator {
         using pair_type = std::pair<index_type, value_type>;
 
         // a pointer to the leaf node currently processed or null (end)
@@ -942,7 +958,9 @@ public:
             while (level > 0 && node) {
                 // search for next child
                 while (x < NUM_CELLS) {
-                    if (node->cell[x].ptr) break;
+                    if (node->cell[x].ptr != nullptr) {
+                        break;
+                    }
                     x++;
                 }
 
@@ -966,7 +984,9 @@ public:
             }
 
             // check whether it is the end of range
-            if (!node) return *this;
+            if (node == nullptr) {
+                return *this;
+            }
 
             // search the first value in this node
             x = 0;
@@ -1125,7 +1145,7 @@ public:
                 i = i & getLevelMask(level);
 
                 // find next higher value
-                i += (1 << (BITS * level));
+                i += 1ull << (BITS * level);
 
             } else {
                 if (level == 0) {
@@ -1233,7 +1253,9 @@ private:
      */
     static Node* clone(const Node* node, int level) {
         // support null-pointers
-        if (!node) return nullptr;
+        if (node == nullptr) {
+            return nullptr;
+        }
 
         // create a clone
         auto* res = new Node();
@@ -1250,7 +1272,9 @@ private:
         // for inner nodes clone each child
         for (int i = 0; i < NUM_CELLS; i++) {
             auto cur = clone(node->cell[i].ptr, level - 1);
-            if (cur) cur->parent = res;
+            if (cur != nullptr) {
+                cur->parent = res;
+            }
             res->cell[i].ptr = cur;
         }
 
@@ -1402,9 +1426,9 @@ class SparseBitMap {
     using atomic_value_t = typename data_store_t::atomic_value_type;
 
     // some constants for manipulating stored values
-    static const short BITS_PER_ENTRY = sizeof(value_t) * 8;
-    static const short LEAF_INDEX_WIDTH = __builtin_ctz(BITS_PER_ENTRY);
-    static const uint64_t LEAF_INDEX_MASK = BITS_PER_ENTRY - 1;
+    static constexpr short BITS_PER_ENTRY = sizeof(value_t) * 8;
+    static constexpr short LEAF_INDEX_WIDTH = static_cast<short>(__builtin_ctz(BITS_PER_ENTRY));
+    static constexpr uint64_t LEAF_INDEX_MASK = BITS_PER_ENTRY - 1;
 
 public:
     // the type to address individual entries
@@ -1480,7 +1504,7 @@ public:
 #endif
 
         value_t old = val.fetch_or(bit, std::memory_order::memory_order_relaxed);
-        return !(old & bit);
+        return (old & bit) == 0u;
     }
 
     /**
@@ -1562,7 +1586,7 @@ public:
         uint64_t mask = 0;
 
         // the value currently pointed to
-        index_type value;
+        index_type value{};
 
     public:
         // default constructor -- creating an end-iterator
@@ -1707,6 +1731,39 @@ public:
     }
 
     /**
+     * Locates an iterator to the first element in this sparse bit map not less
+     * than the given index.
+     */
+    iterator lower_bound(index_type i) const {
+        auto it = store.lowerBound(i >> LEAF_INDEX_WIDTH);
+        if (it.isEnd()) return end();
+
+        // check bit-set part
+        uint64_t mask = iterator::toMask(it->second);
+
+        // if there is no bit remaining in this mask, check next mask.
+        if (!(mask & ((~uint64_t(0)) << (i & LEAF_INDEX_MASK)))) {
+            index_type next = ((i >> LEAF_INDEX_WIDTH) + 1) << LEAF_INDEX_WIDTH;
+            if (next < i) return end();
+            return lower_bound(next);
+        }
+
+        // there are bits left, use least significant bit of those
+        mask &= ((~uint64_t(0)) << (i & LEAF_INDEX_MASK));  // remove all bits before pos i
+
+        // compute value represented by least significant bit
+        index_type pos = __builtin_ctzll(mask);
+
+        // remove this bit as well
+        mask = mask & ~(1ull << pos);
+
+        // construct value of this located bit
+        index_type val = i & ~LEAF_INDEX_MASK;
+        val |= pos;
+        return iterator(it, mask, val);
+    }
+
+    /**
      * A debugging utility printing the internal structure of this map to the
      * given output stream.
      */
@@ -1751,7 +1808,7 @@ public:
      */
     template <typename... Values>
     bool insert(Values... values) {
-        return static_cast<Derived&>(*this).insert((entry_type){{RamDomain(values)...}});
+        return static_cast<Derived&>(*this).insert(entry_type{{RamDomain(values)...}});
     }
 
     /**
@@ -1759,7 +1816,7 @@ public:
      */
     template <typename... Values>
     bool contains(Values... values) const {
-        return static_cast<const Derived&>(*this).contains((entry_type){{RamDomain(values)...}});
+        return static_cast<const Derived&>(*this).contains(entry_type{{RamDomain(values)...}});
     }
 
     // ---------------------------------------------------------------------
@@ -1777,6 +1834,9 @@ public:
     class iterator : public std::iterator<std::forward_iterator_tag, entry_type> {
         template <unsigned Len, unsigned Pos, unsigned Dimensions>
         friend struct fix_binding;
+
+        template <unsigned Pos, unsigned Dimensions>
+        friend struct fix_lower_bound;
 
         template <unsigned Pos, unsigned Dimensions>
         friend struct fix_first;
@@ -1899,6 +1959,7 @@ struct fix_first {
         // set iterator to first in store
         auto first = store.begin();
         get_nested_iter_core<Pos>()(iter.iter_core).setIterator(first);
+        iter.value[Pos] = *first;
     }
 
     template <typename Store, typename iterator>
@@ -1906,6 +1967,7 @@ struct fix_first {
         // set iterator to first in store
         auto first = store.begin();
         get_nested_iter_core<Pos>()(iter.iter_core).setIterator(first);
+        iter.value[Pos] = first->first;
         // and continue recursively
         fix_first<Pos + 1, Dim>()(first->second->getStore(), iter);
     }
@@ -2011,6 +2073,68 @@ struct fix_binding<0, Dim, Dim> {
         return true;
     }
 };
+
+/**
+ * A functor initializing an iterator upon creation to reference the first element
+ * within a given Trie being not less than a given value .
+ */
+template <unsigned Pos, unsigned Dim>
+struct fix_lower_bound {
+    template <unsigned bits, typename iterator, typename entry_type>
+    bool operator()(const SparseBitMap<bits>& store, iterator& iter, const entry_type& entry) const {
+        // search in current level
+        auto cur = store.lower_bound(entry[Pos]);
+
+        if (cur == store.end()) return false;
+
+        get_nested_iter_core<Pos>()(iter.iter_core).setIterator(cur);
+
+        assert(entry[Pos] <= RamDomain(*cur));
+        iter.value[Pos] = *cur;
+
+        // no more remaining levels to fix
+        return true;
+    }
+
+    template <typename Store, typename iterator, typename entry_type>
+    bool operator()(const Store& store, iterator& iter, const entry_type& entry) const {
+        // search in current level
+        auto cur = store.lowerBound(entry[Pos]);
+
+        // if no lower boundary is found, be done
+        if (cur == store.end()) return false;
+        assert(RamDomain(cur->first) >= entry[Pos]);
+
+        // if the lower bound is higher than the requested value, go to first in subtree
+        if (RamDomain(cur->first) > entry[Pos]) {
+            get_nested_iter_core<Pos>()(iter.iter_core).setIterator(cur);
+            iter.value[Pos] = cur->first;
+            fix_first<Pos + 1, Dim>()(cur->second->getStore(), iter);
+            return true;
+        }
+
+        // attempt to fix the rest
+        if (!fix_lower_bound<Pos + 1, Dim>()(cur->second->getStore(), iter, entry)) {
+            // if it does not work, since there are no matching elements in this branch, go to next
+            entry_type sub = entry;
+            sub[Pos] += 1;
+            for (size_t i = Pos + 1; i < Dim; ++i) {
+                sub[i] = 0;
+            }
+            return (*this)(store, iter, sub);
+        }
+
+        // remember result
+        get_nested_iter_core<Pos>()(iter.iter_core).setIterator(cur);
+
+        // update iterator value
+        iter.value[Pos] = cur->first;
+
+        // done!
+        return true;
+    }
+};
+
 }  // namespace detail
 
 /**
@@ -2161,6 +2285,8 @@ public:
 
         op_context() = default;
     };
+
+    using operation_hints = op_context;
 
     using base::contains;
     using base::insert;
@@ -2369,6 +2495,35 @@ public:
     }
 
     /**
+     * Obtains an iterator to the first element not less than the given entry value.
+     *
+     * @param entry the lower bound for this search
+     * @param ctxt the operation context to be utilized
+     * @return an iterator addressing the first element in this structure not less than the given value
+     */
+    iterator lower_bound(const entry_type& entry, op_context& /* ctxt */) const {
+        // start with a default-initialized iterator
+        iterator res;
+
+        // adapt it level by level
+        bool found = detail::fix_lower_bound<0, Dim>()(store, res, entry);
+
+        // use the result
+        return found ? res : end();
+    }
+
+    /**
+     * Obtains an iterator to the first element not less than the given entry value.
+     *
+     * @param entry the lower bound for this search
+     * @return an iterator addressing the first element in this structure not less than the given value
+     */
+    iterator lower_bound(const entry_type& entry) const {
+        op_context ctxt;
+        return lower_bound(entry, ctxt);
+    }
+
+    /**
      * Computes a partition of an approximate number of chunks of the content
      * of this trie. Thus, the union of the resulting set of disjoint ranges is
      * equivalent to the content of this trie.
@@ -2388,7 +2543,9 @@ public:
         int c = 1;
         auto priv = begin();
         for (auto it = store.begin(); it != store.end(); ++it, c++) {
-            if (c % step != 0 || c == 1) continue;
+            if (c % step != 0 || c == 1) {
+                continue;
+            }
             auto cur = iterator(it);
             res.push_back(make_range(priv, cur));
             priv = cur;
@@ -2535,6 +2692,7 @@ class Trie<0u> : public detail::TrieBase<0u, Trie<0u>> {
 public:
     using element_type = entry_type;
     struct op_context {};
+    using operation_hints = op_context;
 
     using base::contains;
     using base::insert;
@@ -2763,6 +2921,7 @@ class Trie<1u> : public detail::TrieBase<1u, Trie<1u>> {
 public:
     using element_type = entry_type;
     using op_context = typename map_type::op_context;
+    using operation_hints = op_context;
 
     using base::contains;
     using base::insert;
@@ -2948,12 +3107,14 @@ public:
         if (this->empty()) return res;
 
         // use top-level elements for partitioning
-        int step = std::max(map.size() / chunks, size_t(1));
+        int step = static_cast<int>(std::max(map.size() / chunks, size_t(1)));
 
         int c = 1;
         auto priv = begin();
         for (auto it = map.begin(); it != map.end(); ++it, c++) {
-            if (c % step != 0 || c == 1) continue;
+            if (c % step != 0 || c == 1) {
+                continue;
+            }
             auto cur = iterator(it);
             res.push_back(make_range(priv, cur));
             priv = cur;
@@ -2997,6 +3158,15 @@ public:
         auto next = pos;
         ++next;
         return make_range(iterator(pos), iterator(next));
+    }
+
+    iterator lower_bound(const entry_type& entry, op_context&) const {
+        return iterator(map.lower_bound(entry[0]));
+    }
+
+    iterator lower_bound(const entry_type& entry) const {
+        op_context ctxt;
+        return lower_bound(entry, ctxt);
     }
 
     /**

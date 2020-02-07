@@ -7,6 +7,21 @@
 #include <iostream>
 #include <list>
 
+#ifdef _WIN32
+/**
+ * MSVC does not provide a builtin for counting leading zeroes like gcc,
+ * so we have to implement it ourselves.
+ */
+unsigned long __inline __builtin_clzll(unsigned long long value) {
+    unsigned long msb = 0;
+
+    if (_BitScanReverse64(&msb, value))
+        return 63 - msb;
+    else
+        return 64;
+}
+#endif  // _WIN32
+
 using std::size_t;
 namespace souffle {
 
@@ -284,10 +299,10 @@ public:
     const size_t BLOCKSIZE = (1ul << BLOCKBITS);
 
     // number of inserted
-    std::atomic<size_t> num_containers;
+    std::atomic<size_t> num_containers = 0;
     size_t allocsize = BLOCKSIZE;
-    std::atomic<size_t> container_size;
-    std::atomic<size_t> m_size;
+    std::atomic<size_t> container_size = 0;
+    std::atomic<size_t> m_size = 0;
 
     // > 2^64 elements can be stored (default initialise to nullptrs)
     static constexpr size_t max_conts = 64;

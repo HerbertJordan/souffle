@@ -34,19 +34,14 @@ class AstTranslationUnit;
  */
 class AstPragma : public AstNode {
 public:
-    ~AstPragma() override = default;
-
     AstPragma() = default;
 
     AstPragma(std::string k, std::string v) : key(std::move(k)), value(std::move(v)) {}
 
-    /** Obtains a list of all embedded child nodes */
-    std::vector<const AstNode*> getChildNodes() const override {
-        // type is just cached, not essential
-        return std::vector<const AstNode*>();
+    void print(std::ostream& os) const override {
+        os << ".pragma " << key << " " << value << "\n";
     }
 
-    /** Creates a clone of this AST sub-structure */
     AstPragma* clone() const override {
         auto res = new AstPragma();
         res->key = key;
@@ -55,28 +50,10 @@ public:
         return res;
     }
 
-    /** No nested nodes to apply to */
-    void apply(const AstNodeMapper& mapper) override {}
-
-    /** Output to a given output stream */
-    void print(std::ostream& os) const override {
-        os << ".pragma " << key << " " << value << "\n";
-    }
-
+    /* Get kvp */
     std::pair<std::string, std::string> getkvp() const {
         return std::pair<std::string, std::string>(key, value);
     }
-
-    friend std::ostream& operator<<(std::ostream& out, const AstPragma& arg) {
-        out << arg.key << " \"" << arg.value << "\"";
-        return out;
-    }
-
-    /** Name of the key */
-    std::string key;
-
-    /** Value */
-    std::string value;
 
 protected:
     /** An internal function to determine equality to another node */
@@ -85,8 +62,15 @@ protected:
         const auto& other = static_cast<const AstPragma&>(node);
         return other.key == key && other.value == value;
     }
+
+    /** Name of the key */
+    std::string key;
+
+    /** Value */
+    std::string value;
 };
 
+/** TODO (b-scholz): this should not be here */
 class AstPragmaChecker : public AstTransformer {
 public:
     std::string getName() const override {

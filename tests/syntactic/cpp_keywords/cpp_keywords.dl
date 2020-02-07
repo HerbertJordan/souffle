@@ -214,9 +214,9 @@ error(1).
 pragma(1).
 .decl _Pragma(x:number)
 _Pragma(1).
-.decl worked?(x:number)
-.output worked?()
-worked?(X) :- workaround([X]).
+.decl worked(x:number)
+.output worked()
+worked(X) :- workaround([X]).
 // TODO (#467, #468): the following is a hack to disable stratification as over a hundred subprograms are produced for this test
 .type number_record = [ x:number ]
 .decl workaround(x:number_record)

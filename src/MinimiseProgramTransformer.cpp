@@ -16,12 +16,15 @@
 
 #include "AstArgument.h"
 #include "AstClause.h"
+#include "AstIO.h"
+#include "AstIOTypeAnalysis.h"
 #include "AstLiteral.h"
 #include "AstProgram.h"
 #include "AstRelation.h"
 #include "AstRelationIdentifier.h"
 #include "AstTransforms.h"
 #include "AstTranslationUnit.h"
+#include "AstUtils.h"
 #include "AstVisitor.h"
 #include <map>
 #include <memory>
@@ -103,7 +106,7 @@ std::vector<std::vector<unsigned int>> extractPermutations(
         possibilities.erase(possibilities.begin());
         todoStack.push(possibilities);
 
-        if (seen[nextNum]) {
+        if (seen[nextNum] != 0u) {
             // number already seen in this permutation
             continue;
         } else {
@@ -230,8 +233,8 @@ bool isValidPermutation(
                 }
             } else if (isConstant(leftArg) && isConstant(rightArg)) {
                 // check if its the same constant
-                auto leftCst = dynamic_cast<AstConstant*>(leftArg)->getIndex();
-                auto rightCst = dynamic_cast<AstConstant*>(rightArg)->getIndex();
+                auto leftCst = dynamic_cast<AstConstant*>(leftArg)->getRamRepresentation();
+                auto rightCst = dynamic_cast<AstConstant*>(rightArg)->getRamRepresentation();
 
                 if (leftCst != rightCst) {
                     // constants don't match, failed!
@@ -286,6 +289,11 @@ bool areBijectivelyEquivalent(const AstClause* left, const AstClause* right) {
         return false;
     }
 
+    // head atoms must have the same arity
+    if (left->getHead()->getArity() != right->getHead()->getArity()) {
+        return false;
+    }
+
     // set up the n x n permutation matrix, where n is the number of
     // atoms in the clause, including the head atom
     size_t size = left->getBodyLiterals().size() + 1;
@@ -295,8 +303,9 @@ bool areBijectivelyEquivalent(const AstClause* left, const AstClause* right) {
     }
 
     // create permutation matrix
-    for (size_t i = 0; i < size; i++) {
-        for (size_t j = 0; j < size; j++) {
+    permutationMatrix[0][0] = 1;
+    for (size_t i = 1; i < size; i++) {
+        for (size_t j = 1; j < size; j++) {
             if (isValidMove(left, i, right, j)) {
                 permutationMatrix[i][j] = 1;
             }
@@ -316,12 +325,18 @@ bool areBijectivelyEquivalent(const AstClause* left, const AstClause* right) {
     return false;
 }
 
-bool MinimiseProgramTransformer::transform(AstTranslationUnit& translationUnit) {
+/**
+ * Reduces locally-redundant clauses.
+ * A clause is locally-redundant if there is another clause within the same relation
+ * that computes the same set of tuples.
+ * @return true iff the program was changed
+ */
+bool reduceLocallyEquivalentClauses(AstTranslationUnit& translationUnit) {
     AstProgram& program = *translationUnit.getProgram();
 
     std::vector<AstClause*> clausesToDelete;
 
-    // split up each relation's rules into equivalene classes
+    // split up each relation's rules into equivalence classes
     // TODO (azreika): consider turning this into an ast analysis instead
     for (AstRelation* rel : program.getRelations()) {
         std::vector<std::vector<AstClause*>> equivalenceClasses;
@@ -356,6 +371,100 @@ bool MinimiseProgramTransformer::transform(AstTranslationUnit& translationUnit) 
 
     // changed iff any clauses were deleted
     return !clausesToDelete.empty();
+}
+
+/**
+ * Removes redundant singleton relations.
+ * Singleton relations are relations with a single clause. A singleton relation is redundant
+ * if there exists another singleton relation that computes the same set of tuples.
+ * @return true iff the program was changed
+ */
+bool reduceSingletonRelations(AstTranslationUnit& translationUnit) {
+    // Note: This reduction is particularly useful in conjunction with the
+    // body-partitioning transformation
+    AstProgram& program = *translationUnit.getProgram();
+    auto* ioTypes = translationUnit.getAnalysis<IOType>();
+
+    // Find all singleton relations to consider
+    std::vector<AstClause*> singletonRelationClauses;
+    for (AstRelation* rel : program.getRelations()) {
+        if (!ioTypes->isIO(rel) && rel->getClauses().size() == 1) {
+            AstClause* clause = rel->getClauses()[0];
+            singletonRelationClauses.push_back(clause);
+        }
+    }
+
+    // Keep track of clauses found to be redundant
+    std::set<AstClause*> redundantClauses;
+
+    // Keep track of canonical relation name for each redundant clause
+    std::map<AstRelationIdentifier, AstRelationIdentifier> canonicalName;
+
+    // Check pairwise equivalence of each singleton relation
+    for (size_t i = 0; i < singletonRelationClauses.size(); i++) {
+        AstClause* first = singletonRelationClauses[i];
+        if (redundantClauses.find(first) != redundantClauses.end()) {
+            // Already found to be redundant, no need to check
+            continue;
+        }
+
+        for (size_t j = i + 1; j < singletonRelationClauses.size(); j++) {
+            AstClause* second = singletonRelationClauses[j];
+
+            // Note: Bijective-equivalence check does not care about the head relation name
+            if (areBijectivelyEquivalent(first, second)) {
+                AstRelationIdentifier firstName = first->getHead()->getName();
+                AstRelationIdentifier secondName = second->getHead()->getName();
+                redundantClauses.insert(second);
+                canonicalName.insert(std::pair(secondName, firstName));
+            }
+        }
+    }
+
+    // Remove redundant relation definitions
+    for (AstClause* clause : redundantClauses) {
+        auto relName = clause->getHead()->getName();
+        AstRelation* rel = program.getRelation(relName);
+        assert(rel != nullptr && "relation does not exist in program");
+        program.removeClause(clause);
+        program.removeRelation(relName);
+    }
+
+    // Replace each redundant relation appearance with its canonical name
+    struct replaceRedundantRelations : public AstNodeMapper {
+        const std::map<AstRelationIdentifier, AstRelationIdentifier>& canonicalName;
+
+        replaceRedundantRelations(const std::map<AstRelationIdentifier, AstRelationIdentifier>& canonicalName)
+                : canonicalName(canonicalName) {}
+
+        std::unique_ptr<AstNode> operator()(std::unique_ptr<AstNode> node) const override {
+            // Remove appearances from children nodes
+            node->apply(*this);
+
+            if (auto* atom = dynamic_cast<AstAtom*>(node.get())) {
+                auto pos = canonicalName.find(atom->getName());
+                if (pos != canonicalName.end()) {
+                    auto newAtom = std::unique_ptr<AstAtom>(atom->clone());
+                    newAtom->setName(pos->second);
+                    return std::move(newAtom);
+                }
+            }
+
+            return node;
+        }
+    };
+    replaceRedundantRelations update(canonicalName);
+    program.apply(update);
+
+    // Program was changed iff a relation was replaced
+    return !canonicalName.empty();
+}
+
+bool MinimiseProgramTransformer::transform(AstTranslationUnit& translationUnit) {
+    bool changed = false;
+    changed |= reduceLocallyEquivalentClauses(translationUnit);
+    changed |= reduceSingletonRelations(translationUnit);
+    return changed;
 }
 
 }  // namespace souffle

@@ -24,15 +24,18 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include <cstdio>
 
 namespace souffle {
 
 class ExplainProvenanceImpl : public ExplainProvenance {
 public:
-    ExplainProvenanceImpl(SouffleProgram& prog) : ExplainProvenance(prog) {
+    ExplainProvenanceImpl(SouffleProgram& prog, bool useSublevels) : ExplainProvenance(prog, useSublevels) {
         setup();
     }
 
@@ -68,8 +71,8 @@ public:
         }
     }
 
-    std::unique_ptr<TreeNode> explain(
-            std::string relName, std::vector<RamDomain> tuple, int ruleNum, int levelNum, size_t depthLimit) {
+    std::unique_ptr<TreeNode> explain(std::string relName, std::vector<RamDomain> tuple, int ruleNum,
+            int levelNum, std::vector<RamDomain> subtreeLevels, size_t depthLimit) {
         std::stringstream joinedArgs;
         joinedArgs << join(numsToArgs(relName, tuple), ", ");
         auto joinedArgsStr = joinedArgs.str();
@@ -85,6 +88,10 @@ public:
         if (depthLimit <= 1) {
             tuple.push_back(ruleNum);
             tuple.push_back(levelNum);
+
+            for (auto subtreeLevel : subtreeLevels) {
+                tuple.push_back(subtreeLevel);
+            }
 
             // find if subproof exists already
             size_t idx = 0;
@@ -106,8 +113,14 @@ public:
         std::vector<RamDomain> ret;
         std::vector<bool> err;
 
-        // add level number to tuple
-        tuple.push_back(levelNum);
+        if (useSublevels) {
+            // add subtree level numbers to tuple
+            for (auto subtreeLevel : subtreeLevels) {
+                tuple.push_back(subtreeLevel);
+            }
+        } else {
+            tuple.push_back(levelNum);
+        }
 
         // execute subroutine to get subproofs
         prog.executeSubroutine(relName + "_" + std::to_string(ruleNum) + "_subproof", tuple, ret, err);
@@ -135,12 +148,15 @@ public:
 
             // traverse subroutine return
             size_t arity;
+            size_t auxiliaryArity;
             if (isConstraint) {
                 // we only handle binary constraints, and assume arity is 4 to account for hidden provenance
                 // annotations
                 arity = 4;
+                auxiliaryArity = 2;
             } else {
                 arity = prog.getRelation(bodyRelAtomName)->getArity();
+                auxiliaryArity = prog.getRelation(bodyRelAtomName)->getAuxiliaryArity();
             }
             auto tupleEnd = tupleCurInd + arity;
 
@@ -148,13 +164,20 @@ public:
             std::vector<RamDomain> subproofTuple;
             std::vector<bool> subproofTupleError;
 
-            for (; tupleCurInd < tupleEnd - 2; tupleCurInd++) {
+            for (; tupleCurInd < tupleEnd - auxiliaryArity; tupleCurInd++) {
                 subproofTuple.push_back(ret[tupleCurInd]);
                 subproofTupleError.push_back(err[tupleCurInd]);
             }
 
             int subproofRuleNum = ret[tupleCurInd];
             int subproofLevelNum = ret[tupleCurInd + 1];
+
+            tupleCurInd += 2;
+
+            std::vector<RamDomain> subsubtreeLevels;
+            for (; tupleCurInd < tupleEnd; tupleCurInd++) {
+                subsubtreeLevels.push_back(ret[tupleCurInd]);
+            }
 
             // for a negation, display the corresponding tuple and do not recurse
             if (bodyRel[0] == '!') {
@@ -178,8 +201,8 @@ public:
                 internalNode->setSize(internalNode->getSize() + 1);
                 // otherwise, for a normal tuple, recurse
             } else {
-                auto child =
-                        explain(bodyRel, subproofTuple, subproofRuleNum, subproofLevelNum, depthLimit - 1);
+                auto child = explain(bodyRel, subproofTuple, subproofRuleNum, subproofLevelNum,
+                        subsubtreeLevels, depthLimit - 1);
                 internalNode->setSize(internalNode->getSize() + child->getSize());
                 internalNode->add_child(std::move(child));
             }
@@ -197,15 +220,17 @@ public:
             return std::make_unique<LeafNode>("Relation not found");
         }
 
-        std::pair<int, int> tupleInfo = findTuple(relName, tuple);
-        int ruleNum = tupleInfo.first;
-        int levelNum = tupleInfo.second;
+        std::tuple<int, int, std::vector<RamDomain>> tupleInfo = findTuple(relName, tuple);
+
+        int ruleNum = std::get<0>(tupleInfo);
+        int levelNum = std::get<1>(tupleInfo);
+        std::vector<RamDomain> subtreeLevels = std::get<2>(tupleInfo);
 
         if (ruleNum < 0 || levelNum == -1) {
             return std::make_unique<LeafNode>("Tuple not found");
         }
 
-        return explain(relName, tuple, ruleNum, levelNum, depthLimit);
+        return explain(relName, tuple, ruleNum, levelNum, subtreeLevels, depthLimit);
     }
 
     std::unique_ptr<TreeNode> explainSubproof(
@@ -215,12 +240,24 @@ public:
         }
 
         auto tup = subproofs[subproofNum];
-        RamDomain levelNum = tup.back();
-        tup.pop_back();
-        RamDomain ruleNum = tup.back();
-        tup.pop_back();
 
-        return explain(relName, tup, ruleNum, levelNum, depthLimit);
+        auto rel = prog.getRelation(relName);
+
+        RamDomain ruleNum;
+        ruleNum = tup[rel->getArity() - rel->getAuxiliaryArity()];
+
+        RamDomain levelNum;
+        levelNum = tup[rel->getArity() - rel->getAuxiliaryArity() + 1];
+
+        std::vector<RamDomain> subtreeLevels;
+
+        for (size_t i = rel->getArity() - rel->getAuxiliaryArity() + 2; i < rel->getArity(); i++) {
+            subtreeLevels.push_back(tup[i]);
+        }
+
+        tup.erase(tup.begin() + rel->getArity() - rel->getAuxiliaryArity(), tup.end());
+
+        return explain(relName, tup, ruleNum, levelNum, subtreeLevels, depthLimit);
     }
 
     std::vector<std::string> explainNegationGetVariables(
@@ -228,7 +265,9 @@ public:
         std::vector<std::string> variables;
 
         // check that the tuple actually doesn't exist
-        if (findTuple(relName, argsToNums(relName, args)) != std::make_pair(-1, -1)) {
+        std::tuple<int, int, std::vector<RamDomain>> foundTuple =
+                findTuple(relName, argsToNums(relName, args));
+        if (std::get<0>(foundTuple) != -1 || std::get<1>(foundTuple) != -1) {
             // return a sentinel value
             return std::vector<std::string>({"@"});
         }
@@ -391,19 +430,23 @@ public:
 
             // traverse subroutine return
             size_t arity;
+            size_t auxiliaryArity;
             if (isConstraint) {
                 // we only handle binary constraints, and assume arity is 4 to account for hidden provenance
                 // annotations
                 arity = 4;
+                auxiliaryArity = 2;
             } else {
                 arity = prog.getRelation(bodyRelAtomName)->getArity();
+                auxiliaryArity = prog.getRelation(bodyRelAtomName)->getAuxiliaryArity();
             }
 
             // process current literal
             std::vector<RamDomain> atomValues;
             std::vector<bool> atomErrs;
             size_t j = returnCounter;
-            for (; j < returnCounter + arity - 2; j++) {
+
+            for (; j < returnCounter + arity - auxiliaryArity; j++) {
                 atomValues.push_back(ret[j]);
                 atomErrs.push_back(err[j]);
             }
@@ -474,7 +517,9 @@ public:
         auto size = rel->size();
         int skip = size / 10;
 
-        if (skip == 0) skip = 1;
+        if (skip == 0) {
+            skip = 1;
+        }
 
         std::stringstream ss;
 
@@ -491,7 +536,7 @@ public:
             }
 
             std::vector<RamDomain> currentTuple;
-            for (size_t i = 0; i < rel->getArity() - 2; i++) {
+            for (size_t i = 0; i < rel->getArity() - rel->getAuxiliaryArity(); i++) {
                 RamDomain n;
                 if (*rel->getAttrType(i) == 's') {
                     std::string s;
@@ -510,8 +555,17 @@ public:
             RamDomain levelNum;
             tuple >> levelNum;
 
+            std::vector<RamDomain> subtreeLevels;
+
+            for (size_t i = rel->getArity() - rel->getAuxiliaryArity() + 2; i < rel->getArity(); i++) {
+                RamDomain subLevel;
+                tuple >> subLevel;
+                subtreeLevels.push_back(subLevel);
+            }
+
             std::cout << "Tuples expanded: "
-                      << explain(relName, currentTuple, ruleNum, levelNum, 20)->getSize();
+                      << explain(relName, currentTuple, ruleNum, levelNum, subtreeLevels, 10000)->getSize();
+
             numTuples++;
             proc++;
 
@@ -535,14 +589,134 @@ public:
         os << "\"rules\": [\n";
         bool first = true;
         for (auto const& cur : rules) {
-            if (first)
+            if (first) {
                 first = false;
-            else
+            } else {
                 os << ",\n";
+            }
             os << "\t{ \"rule-number\": \"(R" << cur.first.second << ")\", \"rule\": \""
                << stringify(cur.second) << "\"}";
         }
         os << "\n]\n";
+    }
+
+    void queryProcess(const std::vector<std::pair<std::string, std::vector<std::string>>>& rels) override {
+        std::regex varRegex("[a-zA-Z_][a-zA-Z_0-9]*", std::regex_constants::extended);
+        std::regex symbolRegex("\"([^\"]*)\"", std::regex_constants::extended);
+        std::regex numberRegex("[0-9]+", std::regex_constants::extended);
+
+        std::smatch argsMatcher;
+
+        // map for variable name and corresponding equivalence class
+        std::map<std::string, Equivalence> nameToEquivalence;
+
+        // const constraints that solution must satisfy
+        ConstConstraint constConstraints;
+
+        // relations of tuples containing variables
+        std::vector<Relation*> varRels;
+
+        // counter for adding element to varRels
+        size_t idx = 0;
+
+        // parse arguments in each relation Tuple
+        for (const auto& rel : rels) {
+            Relation* relation = prog.getRelation(rel.first);
+            // number/symbol index for constant arguments in tuple
+            std::vector<RamDomain> constTuple;
+            // relation does not exist
+            if (relation == nullptr) {
+                std::cout << "Relation <" << rel.first << "> does not exist" << std::endl;
+                return;
+            }
+            // arity error
+            if (relation->getArity() - relation->getAuxiliaryArity() != rel.second.size()) {
+                std::cout << "<" + rel.first << "> has arity of "
+                          << std::to_string(relation->getArity() - relation->getAuxiliaryArity())
+                          << std::endl;
+                return;
+            }
+
+            // check if args contain variable
+            bool containVar = false;
+            for (size_t j = 0; j < rel.second.size(); ++j) {
+                // arg is a variable
+                if (std::regex_match(rel.second[j], argsMatcher, varRegex)) {
+                    containVar = true;
+                    auto nameToEquivalenceIter = nameToEquivalence.find(argsMatcher[0]);
+                    // if variable has not shown up before, create an equivalence class for add it to
+                    // nameToEquivalence map, otherwise add its indices to corresponding equivalence class
+                    if (nameToEquivalenceIter == nameToEquivalence.end()) {
+                        nameToEquivalence.insert(
+                                {argsMatcher[0], Equivalence(*(relation->getAttrType(j)), argsMatcher[0],
+                                                         std::make_pair(idx, j))});
+                    } else {
+                        nameToEquivalenceIter->second.push_back(std::make_pair(idx, j));
+                    }
+                    // arg is a symbol
+                } else if (std::regex_match(rel.second[j], argsMatcher, symbolRegex)) {
+                    if (*(relation->getAttrType(j)) != 's') {
+                        std::cout << argsMatcher.str(0) << " does not match type defined in relation"
+                                  << std::endl;
+                        return;
+                    }
+                    // find index of symbol and add indices pair to constConstraints
+                    RamDomain rd = prog.getSymbolTable().lookup(argsMatcher[1]);
+                    constConstraints.push_back(std::make_pair(std::make_pair(idx, j), rd));
+                    if (!containVar) {
+                        constTuple.push_back(rd);
+                    }
+                    // arg is number
+                } else if (std::regex_match(rel.second[j], argsMatcher, numberRegex)) {
+                    if (*(relation->getAttrType(j)) != 'i') {
+                        std::cout << argsMatcher.str(0) << " does not match type defined in relation"
+                                  << std::endl;
+                        return;
+                    }
+                    // convert number string to number and add index, number pair to constConstraints
+                    RamDomain rd = std::stoi(argsMatcher[0]);
+                    constConstraints.push_back(std::make_pair(std::make_pair(idx, j), rd));
+                    if (!containVar) {
+                        constTuple.push_back(rd);
+                    }
+                }
+            }
+
+            // if tuple does not contain any variable, check if existence of the tuple
+            if (!containVar) {
+                bool tupleExist = containsTuple(relation, constTuple);
+
+                // if relation contains this tuple, remove all related constraints
+                if (tupleExist) {
+                    constConstraints.getConstraints().erase(constConstraints.getConstraints().end() -
+                                                                    relation->getArity() +
+                                                                    relation->getAuxiliaryArity(),
+                            constConstraints.getConstraints().end());
+                    // otherwise, there is no solution for given query
+                } else {
+                    std::cout << "false." << std::endl;
+                    std::cout << "Tuple " << rel.first << "(";
+                    for (size_t l = 0; l < rel.second.size() - 1; ++l) {
+                        std::cout << rel.second[l] << ", ";
+                    }
+                    std::cout << rel.second.back() << ") does not exist" << std::endl;
+                    return;
+                }
+            } else {
+                varRels.push_back(relation);
+                ++idx;
+            }
+        }
+
+        // if varRels size is 0, all given tuples only contain constant args and exist, no variable to
+        // resolve, Output true and return
+        if (varRels.size() == 0) {
+            std::cout << "true." << std::endl;
+            return;
+        }
+
+        // find solution for parameterised query
+        findQuerySolution(varRels, nameToEquivalence, constConstraints);
     }
 
 private:
@@ -552,11 +726,12 @@ private:
     std::vector<std::string> constraintList = {
             "=", "!=", "<", "<=", ">=", ">", "match", "contains", "not_match", "not_contains"};
 
-    std::pair<int, int> findTuple(const std::string& relName, std::vector<RamDomain> tup) {
+    std::tuple<int, int, std::vector<RamDomain>> findTuple(
+            const std::string& relName, std::vector<RamDomain> tup) {
         auto rel = prog.getRelation(relName);
 
         if (rel == nullptr) {
-            return std::make_pair(-1, -1);
+            return std::make_tuple(-1, -1, std::vector<RamDomain>());
         }
 
         // find correct tuple
@@ -564,7 +739,7 @@ private:
             bool match = true;
             std::vector<RamDomain> currentTuple;
 
-            for (size_t i = 0; i < rel->getArity() - 2; i++) {
+            for (size_t i = 0; i < rel->getArity() - rel->getAuxiliaryArity(); i++) {
                 RamDomain n;
                 if (*rel->getAttrType(i) == 's') {
                     std::string s;
@@ -589,17 +764,168 @@ private:
                 RamDomain levelNum;
                 tuple >> levelNum;
 
-                return std::make_pair(ruleNum, levelNum);
+                std::vector<RamDomain> subtreeLevels;
+
+                for (size_t i = rel->getArity() - rel->getAuxiliaryArity() + 2; i < rel->getArity(); i++) {
+                    RamDomain subLevel;
+                    tuple >> subLevel;
+                    subtreeLevels.push_back(subLevel);
+                }
+
+                return std::make_tuple(ruleNum, levelNum, subtreeLevels);
             }
         }
 
         // if no tuple exists
-        return std::make_pair(-1, -1);
+        return std::make_tuple(-1, -1, std::vector<RamDomain>());
     }
 
-    void printRelationOutput(
-            const std::vector<bool>& symMask, const IODirectives& ioDir, const Relation& rel) override {
-        WriteCoutCSVFactory().getWriter(symMask, prog.getSymbolTable(), ioDir, true)->writeAll(rel);
+    void printRelationOutput(const std::vector<RamTypeAttribute>& symbolMask, const IODirectives& ioDir,
+            const Relation& rel) override {
+        WriteCoutCSVFactory()
+                .getWriter(symbolMask, prog.getSymbolTable(), ioDir, rel.getAuxiliaryArity())
+                ->writeAll(rel);
+    }
+
+    /*
+     * Find solution for parameterised query satisfying constant constraints and equivalence constraints
+     * @param varRels, reference to vector of relation of tuple contains at least one variable in its
+     * arguments
+     * @param nameToEquivalence, reference to variable name and corresponding equivalence class
+     * @param constConstraints, reference to const constraints must be satisfied
+     * */
+    void findQuerySolution(const std::vector<Relation*>& varRels,
+            const std::map<std::string, Equivalence>& nameToEquivalence,
+            const ConstConstraint& constConstraints) {
+        // vector of iterators for relations in varRels
+        std::vector<Relation::iterator> varRelationIterators;
+        for (auto relation : varRels) {
+            varRelationIterators.push_back(relation->begin());
+        }
+
+        size_t solutionCount = 0;
+        std::stringstream solution;
+
+        // iterate through the vector of iterators to find solution
+        while (true) {
+            bool isSolution = true;
+
+            // vector contains the tuples the iterators currently points to
+            std::vector<tuple> element;
+            for (auto it : varRelationIterators) {
+                element.push_back(*it);
+            }
+            // check if tuple satisfies variable equivalence
+            for (auto var : nameToEquivalence) {
+                if (!var.second.verify(element)) {
+                    isSolution = false;
+                    break;
+                }
+            }
+            if (isSolution) {
+                // check if tuple satisfies constant constraints
+                isSolution = constConstraints.verify(element);
+            }
+
+            if (isSolution) {
+                solutionCount++;
+                // first solution has been found
+                if (solutionCount == 1) {
+                    size_t c = 0;
+                    for (auto var : nameToEquivalence) {
+                        auto idx = var.second.getFirstIdx();
+                        if (var.second.getType() == 'i') {
+                            solution << var.second.getSymbol() << " = "
+                                     << std::to_string(element[idx.first][idx.second]);
+                        } else {
+                            solution << var.second.getSymbol() << " = "
+                                     << prog.getSymbolTable().resolve(element[idx.first][idx.second]);
+                        }
+                        if (++c < nameToEquivalence.size()) {
+                            solution << ", ";
+                        } else {
+                            solution << " ";
+                        }
+                    }
+                    // query has more than one solution
+                } else {
+                    // print previous solution
+                    std::cout << solution.str();
+                    // store the current solution
+                    solution.str(std::string());
+                    size_t c = 0;
+                    for (auto var : nameToEquivalence) {
+                        auto idx = var.second.getFirstIdx();
+                        if (var.second.getType() == 'i') {
+                            solution << var.second.getSymbol() << " = "
+                                     << std::to_string(element[idx.first][idx.second]);
+                        } else {
+                            solution << var.second.getSymbol() << " = "
+                                     << prog.getSymbolTable().resolve(element[idx.first][idx.second]);
+                        }
+                        if (++c < nameToEquivalence.size()) {
+                            solution << ", ";
+                        } else {
+                            solution << " ";
+                        }
+                    }
+                    std::string input;
+                    // get user input whether find next solution or break from current query
+                    while (getline(std::cin, input)) {
+                        if (input == ";") {
+                            break;
+                        } else if (input == ".") {
+                            return;
+                        } else {
+                            std::cout << "use ; to find next solution, use . to break from current query"
+                                      << std::endl;
+                        }
+                    }
+                }
+            }
+            // increment the iterators
+            size_t i = varRels.size() - 1;
+            bool terminate = true;
+            for (auto it = varRelationIterators.rbegin(); it != varRelationIterators.rend(); ++it) {
+                if ((++(*it)) != varRels[i]->end()) {
+                    terminate = false;
+                    break;
+                } else {
+                    (*it) = varRels[i]->begin();
+                    --i;
+                }
+            }
+
+            if (terminate) {
+                // if there is no solution, output false
+                if (solutionCount == 0) {
+                    std::cout << "false." << std::endl;
+                    // otherwise print the last solution
+                } else {
+                    std::cout << solution.str() << "." << std::endl;
+                }
+                break;
+            }
+        }
+    }
+
+    // check if constTuple exists in relation
+    bool containsTuple(Relation* relation, const std::vector<RamDomain>& constTuple) {
+        bool tupleExist = false;
+        for (auto it = relation->begin(); it != relation->end(); ++it) {
+            bool eq = true;
+            for (size_t j = 0; j < constTuple.size(); ++j) {
+                if (constTuple[j] != (*it)[j]) {
+                    eq = false;
+                    break;
+                }
+            }
+            if (eq) {
+                tupleExist = true;
+                break;
+            }
+        }
+        return tupleExist;
     }
 };
 

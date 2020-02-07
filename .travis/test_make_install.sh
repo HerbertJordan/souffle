@@ -6,7 +6,8 @@
 set -e
 set -x
 
-make -j2 install
+JOBS=$(nproc)
+make -j$JOBS install
 
 #generate a simple program
 A=".decl A()
@@ -17,3 +18,6 @@ echo "$A" > a.dl
 
 # test if an installed souffle compiles and runs
 souffle -c a.dl
+
+set +e
+set +x

@@ -1,15 +1,14 @@
-C(x) :-     A(x),    B(x).
-Src locator-:recursive.dl [9:1-9:20]
+B(x) :-     A(x),    C(x).
+Src locator-:recursive.dl [8:1-8:20]
 
   ----- Rule Versions Table -----
-   TOT_T  NREC_T   REC_T  COPY_T    TUPLES   VER
+   TOT_T  NREC_T   REC_T          TUPLES   VER
 
-    .016    .000    .016    .000         0
+   .000s   .000s   .000s               0      
    ---------------------------------------------
-    .016    .000    .016    .000         0     0
-     @new_C(x) :-     A(x),    @delta_B(x),    !C(x).
-      FREQ            ATOM
-      0               @delta_B(x)
-      998             A(x)
+   .000s   .000s   .000s               0     0
+     @new_B(x) :-     A(x),    @delta_C(x),    !B(x).
+      FREQ            RELSIZE         ATOM
+      99              99              A(x)
 
 

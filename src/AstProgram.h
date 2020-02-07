@@ -46,6 +46,8 @@ class AstRelation;
 /**
  *  Intermediate representation of a datalog program
  *          that consists of relations, clauses and types
+ *  TODO (b-scholz): there are a lot of dependencies (pareser etc);
+ *       we need to simplify the interface / class
  */
 class AstProgram : public AstNode {
 public:
@@ -55,18 +57,13 @@ public:
     /** A move constructor */
     AstProgram(AstProgram&& other) noexcept;
 
-    /** A programs destructor */
-    ~AstProgram() override = default;
-
-    // -- Types ----------------------------------------------------------------
+    void print(std::ostream& os) const override;
 
     /** Obtains the type with the given name */
     const AstType* getType(const AstTypeIdentifier& name) const;
 
     /** Gets a list of all types in this program */
     std::vector<const AstType*> getTypes() const;
-
-    // -- Relations ------------------------------------------------------------
 
     /** Find and return the relation in the program given its name */
     AstRelation* getRelation(const AstRelationIdentifier& name) const;
@@ -122,20 +119,10 @@ public:
         return toPtrVector(instantiations);
     }
 
-    // -- I/O ------------------------------------------------------------------
-
-    /** Output the program to a given output stream */
-    void print(std::ostream& os) const override;
-
-    // -- Manipulation ---------------------------------------------------------
-
-    /** Creates a clone of this AST sub-structure */
     AstProgram* clone() const override;
 
-    /** Mutates this node */
     void apply(const AstNodeMapper& map) override;
 
-    /** Obtains a list of all embedded child nodes */
     std::vector<const AstNode*> getChildNodes() const override {
         std::vector<const AstNode*> res;
         for (const auto& cur : types) {
@@ -169,7 +156,6 @@ public:
     }
 
 protected:
-    /** Implements the node comparison for this node type */
     bool equal(const AstNode& node) const override {
         assert(nullptr != dynamic_cast<const AstProgram*>(&node));
         const auto& other = static_cast<const AstProgram&>(node);

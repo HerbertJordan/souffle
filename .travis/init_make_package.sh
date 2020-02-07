@@ -17,3 +17,6 @@ git describe --tags --abbrev=0 --always
 # create configure files
 ./bootstrap
 ./configure --enable-host-packaging
+
+set +e
+set +x

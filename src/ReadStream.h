@@ -26,9 +26,11 @@ namespace souffle {
 
 class ReadStream {
 public:
-    ReadStream(const std::vector<bool>& symbolMask, SymbolTable& symbolTable, const bool prov)
-            : symbolMask(symbolMask), symbolTable(symbolTable), isProvenance(prov),
-              arity(symbolMask.size() - (prov ? 2 : 0)) {}
+    ReadStream(const std::vector<RamTypeAttribute>& symbolMask, SymbolTable& symbolTable,
+            const size_t auxiliaryArity)
+            : symbolMask(symbolMask), symbolTable(symbolTable),
+              arity(static_cast<uint8_t>(symbolMask.size() - auxiliaryArity)),
+              auxiliaryArity(auxiliaryArity) {}
     template <typename T>
     void readAll(T& relation) {
         auto lease = symbolTable.acquireLock();
@@ -43,16 +45,16 @@ public:
 
 protected:
     virtual std::unique_ptr<RamDomain[]> readNextTuple() = 0;
-    const std::vector<bool>& symbolMask;
+    const std::vector<RamTypeAttribute>& symbolMask;
     SymbolTable& symbolTable;
-    const bool isProvenance;
     const uint8_t arity;
+    const size_t auxiliaryArity;
 };
 
 class ReadStreamFactory {
 public:
-    virtual std::unique_ptr<ReadStream> getReader(const std::vector<bool>& symbolMask,
-            SymbolTable& symbolTable, const IODirectives& ioDirectives, const bool provenance) = 0;
+    virtual std::unique_ptr<ReadStream> getReader(const std::vector<RamTypeAttribute>& symbolMask,
+            SymbolTable& symbolTable, const IODirectives& ioDirectives, const size_t number) = 0;
     virtual const std::string& getName() const = 0;
     virtual ~ReadStreamFactory() = default;
 };

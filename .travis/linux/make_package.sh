@@ -8,7 +8,8 @@ set -x
 # create deployment directory
 mkdir deploy
 
-make -j2 package
+JOBS=$(nproc)
+make -j$JOBS package
 
 # compute md5 for package &
 # copy files to deploy directory

@@ -30,28 +30,8 @@ namespace souffle {
  */
 class AstIO : public AstNode {
 public:
+    AstIO(const AstIO& io) : names(io.names), kvps(io.kvps) {}
     AstIO() = default;
-    ~AstIO() override = default;
-
-    /** Obtains a list of all embedded child nodes */
-    std::vector<const AstNode*> getChildNodes() const override {
-        // type is just cached, not essential
-        return std::vector<const AstNode*>();
-    }
-
-    /** Creates a clone of this AST sub-structure */
-    AstIO* clone() const override {
-        auto res = new AstIO();
-        res->names = names;
-        res->kvps = kvps;
-        res->setSrcLoc(getSrcLoc());
-        return res;
-    }
-
-    /** No nested nodes to apply to */
-    void apply(const AstNodeMapper& /*mapper*/) override {}
-
-    /** Output to a given output stream */
     void print(std::ostream& os) const override {
         bool first = true;
         for (auto& relationName : getNames()) {
@@ -98,22 +78,22 @@ public:
         names.insert(name);
     }
 
+    /** Add kvp */
     void addKVP(const std::string& key, const std::string& value) {
         kvps[key] = unescape(value);
     }
 
+    /** Get IO directive map */
     const std::map<std::string, std::string>& getIODirectiveMap() const {
         return kvps;
     }
 
-protected:
-    AstIO(const AstIO& io) : names(io.names), kvps(io.kvps) {}
-
-    /** An internal function to determine equality to another node */
-    bool equal(const AstNode& node) const override {
-        assert(nullptr != dynamic_cast<const AstIO*>(&node));
-        const auto& other = static_cast<const AstIO&>(node);
-        return other.names == names && other.kvps == kvps;
+    AstIO* clone() const override {
+        auto res = new AstIO();
+        res->names = names;
+        res->kvps = kvps;
+        res->setSrcLoc(getSrcLoc());
+        return res;
     }
 
     std::string unescape(const std::string& inputString) const {
@@ -134,6 +114,14 @@ protected:
         }
         return result;
     }
+
+protected:
+    bool equal(const AstNode& node) const override {
+        assert(nullptr != dynamic_cast<const AstIO*>(&node));
+        const auto& other = static_cast<const AstIO&>(node);
+        return other.names == names && other.kvps == kvps;
+    }
+
     /** Name of the kvp */
     std::set<AstRelationIdentifier> names;
 
@@ -151,22 +139,12 @@ public:
         setSrcLoc(io.getSrcLoc());
     }
     AstStore() = default;
-    ~AstStore() override = default;
 
-    /** Output to a given output stream */
     void print(std::ostream& os) const override {
         os << ".output ";
         AstIO::print(os);
     }
 
-    /** An internal function to determine equality to another node */
-    bool equal(const AstNode& node) const override {
-        assert(nullptr != dynamic_cast<const AstStore*>(&node));
-        const auto& other = static_cast<const AstStore&>(node);
-        return other.names == names && other.kvps == kvps;
-    }
-
-    /** Creates a clone of this AST sub-structure */
     AstStore* clone() const override {
         auto res = new AstStore();
         res->names = names;
@@ -186,22 +164,12 @@ public:
         setSrcLoc(io.getSrcLoc());
     }
     AstLoad() = default;
-    ~AstLoad() override = default;
 
-    /** Output to a given output stream */
     void print(std::ostream& os) const override {
-        os << ".output ";
+        os << ".input ";
         AstIO::print(os);
     }
 
-    /** An internal function to determine equality to another node */
-    bool equal(const AstNode& node) const override {
-        assert(nullptr != dynamic_cast<const AstLoad*>(&node));
-        const auto& other = static_cast<const AstLoad&>(node);
-        return other.names == names && other.kvps == kvps;
-    }
-
-    /** Creates a clone of this AST sub-structure */
     AstLoad* clone() const override {
         auto res = new AstLoad();
         res->names = names;
@@ -223,22 +191,12 @@ public:
     AstPrintSize() {
         addKVP("IO", "stdoutprintsize");
     }
-    ~AstPrintSize() override = default;
 
-    /** Output to a given output stream */
     void print(std::ostream& os) const override {
         os << ".printsize ";
         AstIO::print(os);
     }
 
-    /** An internal function to determine equality to another node */
-    bool equal(const AstNode& node) const override {
-        assert(nullptr != dynamic_cast<const AstPrintSize*>(&node));
-        const auto& other = static_cast<const AstPrintSize&>(node);
-        return other.names == names;
-    }
-
-    /** Creates a clone of this AST sub-structure */
     AstPrintSize* clone() const override {
         auto res = new AstPrintSize();
         res->names = names;

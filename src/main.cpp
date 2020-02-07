@@ -20,31 +20,28 @@
 #include "AstTransforms.h"
 #include "AstTranslationUnit.h"
 #include "AstTranslator.h"
+#include "AstTypeAnalysis.h"
 #include "ComponentModel.h"
 #include "DebugReport.h"
 #include "ErrorReport.h"
 #include "Explain.h"
 #include "Global.h"
-#include "LVM.h"
-#include "LVMProgInterface.h"
+#include "InterpreterEngine.h"
+#include "InterpreterProgInterface.h"
 #include "ParserDriver.h"
-#include "RAMI.h"
-#include "RAMIProgInterface.h"
+#include "PrecedenceGraph.h"
+#include "RamIndexAnalysis.h"
+#include "RamLevelAnalysis.h"
 #include "RamProgram.h"
 #include "RamTransformer.h"
 #include "RamTransforms.h"
 #include "RamTranslationUnit.h"
+#include "RamTypes.h"
 #include "SymbolTable.h"
 #include "Synthesiser.h"
 #include "Util.h"
 #include "config.h"
 #include "profile/Tui.h"
-
-#ifdef USE_MPI
-#include "Mpi.h"
-#include "PrecedenceGraph.h"
-#endif
-
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -63,12 +60,7 @@ namespace souffle {
 /**
  * Executes a binary file.
  */
-void executeBinary(const std::string& binaryFilename
-#ifdef USE_MPI
-        ,
-        const int numberOfProcesses
-#endif
-) {
+void executeBinary(const std::string& binaryFilename) {
     assert(!binaryFilename.empty() && "binary filename cannot be blank");
 
     // check whether the executable exists
@@ -78,26 +70,15 @@ void executeBinary(const std::string& binaryFilename
 
     // run the executable
     int exitCode;
-#ifdef USE_MPI
-    if (Global::config().get("engine") == "mpi") {
-        std::stringstream ss;
-        ss << "mpiexec";
-        if (Global::config().has("hostfile")) {
-            ss << " --hostfile " << Global::config().get("hostfile");
-        }
-        ss << " -n " << std::to_string(numberOfProcesses);
-        ss << " " << binaryFilename;
-        exitCode = system(ss.str().c_str());
-    } else
-#endif
     {
-        std::string ldPath = "LD_LIBRARY_PATH=";
-        for (const std::string& library : splitString(Global::config().get("library-dir"), ' ')) {
-            ldPath += library + ':';
+        if (Global::config().has("library-dir")) {
+            std::string ldPath;
+            for (const std::string& library : splitString(Global::config().get("library-dir"), ' ')) {
+                ldPath += library + ':';
+            }
+            ldPath.back() = ' ';
+            setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
         }
-        ldPath.back() = ' ';
-        std::vector<char> ldPathChars(ldPath.begin(), ldPath.end());
-        putenv(&ldPathChars[0]);
 
         exitCode = system(binaryFilename.c_str());
     }
@@ -146,13 +127,6 @@ int main(int argc, char** argv) {
     /* Time taking for overall runtime */
     auto souffle_start = std::chrono::high_resolution_clock::now();
 
-#ifdef USE_MPI
-    mpi::init(argc, argv);
-    if (mpi::commRank() != 0) {
-        throw std::runtime_error("Error: Souffle can only be run with one MPI process.");
-    }
-#endif
-
     /* have all to do with command line arguments in its own scope, as these are accessible through the global
      * configuration only */
     try {
@@ -167,7 +141,7 @@ int main(int argc, char** argv) {
         footer << "----------------------------------------------------------------------------" << std::endl;
         footer << "Version: " << PACKAGE_VERSION << "" << std::endl;
         footer << "----------------------------------------------------------------------------" << std::endl;
-        footer << "Copyright (c) 2016-18 The Souffle Developers." << std::endl;
+        footer << "Copyright (c) 2016-20 The Souffle Developers." << std::endl;
         footer << "Copyright (c) 2013-16 Oracle and/or its affiliates." << std::endl;
         footer << "All rights reserved." << std::endl;
         footer << "============================================================================" << std::endl;
@@ -189,6 +163,9 @@ int main(int argc, char** argv) {
                 {"generate", 'g', "FILE", "", false,
                         "Generate C++ source code for the given Datalog program and write it to "
                         "<FILE>."},
+                {"swig", 's', "LANG", "", false,
+                        "Generate SWIG interface for given language. The values <LANG> accepts is java and "
+                        "python. "},
                 {"library-dir", 'L', "DIR", "", true, "Specify directory for library files."},
                 {"libraries", 'l', "FILE", "", true, "Specify libraries."},
                 {"no-warn", 'w', "", "", false, "Disable warnings."},
@@ -201,22 +178,21 @@ int main(int argc, char** argv) {
                 {"dl-program", 'o', "FILE", "", false,
                         "Generate C++ source code, written to <FILE>, and compile this to a "
                         "binary executable (without executing it)."},
-                {"live-profile", '\4', "", "", false, "Enable live profiling."},
+                {"live-profile", '\2', "", "", false, "Enable live profiling."},
                 {"profile", 'p', "FILE", "", false, "Enable profiling, and write profile data to <FILE>."},
                 {"profile-use", 'u', "FILE", "", false,
                         "Use profile log-file <FILE> for profile-guided optimization."},
                 {"debug-report", 'r', "FILE", "", false, "Write HTML debug report to <FILE>."},
                 {"pragma", 'P', "OPTIONS", "", false, "Set pragma options."},
-                {"provenance", 't', "[ none | explain | explore ]", "", false,
+                {"provenance", 't', "[ none | explain | explore | subtreeHeights ]", "", false,
                         "Enable provenance instrumentation and interaction."},
-                {"engine", 'e', "[ file | mpi ]", "", false,
-                        "Specify communication engine for distributed execution."},
-                {"interpreter", '\1', "[ RAMI | LVM ]", "LVM", false, "Switch interpreter implementation."},
-                {"hostfile", '\2', "FILE", "", false,
-                        "Specify --hostfile option for call to mpiexec when using mpi as "
-                        "execution engine."},
                 {"verbose", 'v', "", "", false, "Verbose output."},
                 {"version", '\3', "", "", false, "Version."},
+                {"show", '\4',
+                        "[ parse-errors | precedence-graph | scc-graph | transformed-datalog | "
+                        "transformed-ram | type-analysis ]",
+                        "", false, "Print selected program information."},
+                {"parse-errors", '\5', "", "", false, "Show parsing errors, if any, then exit."},
                 {"help", 'h', "", "", false, "Display this help message."}};
         Global::config().processArgs(argc, argv, header.str(), footer.str(), options);
 
@@ -224,8 +200,10 @@ int main(int argc, char** argv) {
 
         /* for the version option, if given print the version text then exit */
         if (Global::config().has("version")) {
-            std::cout << "Souffle: " << PACKAGE_VERSION << "" << std::endl;
-            std::cout << "Copyright (c) 2016-18 The Souffle Developers." << std::endl;
+            std::cout << "Souffle: " << PACKAGE_VERSION;
+            std::cout << "(" << RAM_DOMAIN_SIZE << "bit Domains)";
+            std::cout << std::endl;
+            std::cout << "Copyright (c) 2016-19 The Souffle Developers." << std::endl;
             std::cout << "Copyright (c) 2013-16 Oracle and/or its affiliates." << std::endl;
             return 0;
         }
@@ -243,30 +221,23 @@ int main(int argc, char** argv) {
         }
 
         /* for the jobs option, to determine the number of threads used */
-        if (Global::config().has("jobs")) {
 #ifdef _OPENMP
-            if (isNumber(Global::config().get("jobs").c_str())) {
-                if (std::stoi(Global::config().get("jobs")) < 1) {
-                    throw std::runtime_error(
-                            "Number of jobs in the -j/--jobs options must be greater than zero!");
-                }
-            } else {
-                if (!Global::config().has("jobs", "auto")) {
-                    throw std::runtime_error(
-                            "Wrong parameter " + Global::config().get("jobs") + " for option -j/--jobs!");
-                }
-                Global::config().set("jobs", "0");
+        if (isNumber(Global::config().get("jobs").c_str())) {
+            if (std::stoi(Global::config().get("jobs")) < 1) {
+                throw std::runtime_error("-j/--jobs may only be set to 'auto' or an integer greater than 0.");
             }
-#else
-            // Check that -j option has not been changed from the default
-            if (Global::config().get("jobs") != "1") {
-                std::cerr << "\nWarning: OpenMP is not enabled\n";
-            }
-#endif
         } else {
-            throw std::runtime_error(
-                    "Wrong parameter " + Global::config().get("jobs") + " for option -j/--jobs!");
+            if (!Global::config().has("jobs", "auto")) {
+                throw std::runtime_error("-j/--jobs may only be set to 'auto' or an integer greater than 0.");
+            }
+            Global::config().set("jobs", "0");
         }
+#else
+        // Check that -j option has not been changed from the default
+        if (Global::config().get("jobs") != "1") {
+            std::cerr << "\nThis installation of Souffle does not support concurrent jobs.\n";
+        }
+#endif
 
         /* if an output directory is given, check it exists */
         if (Global::config().has("output-dir") && !Global::config().has("output-dir", "-") &&
@@ -320,46 +291,19 @@ int main(int argc, char** argv) {
             Global::config().set("compile");
         }
 
-        /* disable provenance with engine option */
-        if (Global::config().has("provenance")) {
-            if (Global::config().has("engine")) {
-                throw std::runtime_error("provenance cannot be enabled with distributed execution.");
-            }
-        }
-
-        /* ensure that souffle has been compiled with support for the execution engine, if specified */
-        if (Global::config().has("engine")) {
-            if (!(Global::config().has("compile") || Global::config().has("dl-program") ||
-                        Global::config().has("generate"))) {
-                throw std::invalid_argument("Error: Use of engine option not yet available for interpreter.");
-            }
-            const auto& engine = Global::config().get("engine");
-            if (engine != "file" && engine != "mpi") {
-                throw std::invalid_argument("Error: Use of engine '" + engine + "' is not supported.");
-            }
-#ifndef USE_MPI
-            if (engine == "mpi") {
-                throw std::invalid_argument("Error: Use of engine '" + engine +
-                                            "' requires configure option '--enable-" + engine + "'.");
-            }
-            if (Global::config().has("hostfile")) {
-                throw std::invalid_argument(
-                        "Error: Use of hostfile option requires configure option '--enable-" + engine + "'.");
-            }
-#else
-            if (engine != "mpi" && Global::config().has("hostfile")) {
-                throw std::invalid_argument(
-                        "Error: Use of hostfile option requires execution engine '" + engine + "'.");
-            }
-#endif
-        }
-
         if (Global::config().has("live-profile") && !Global::config().has("profile")) {
             Global::config().set("profile");
         }
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         exit(1);
+    }
+
+    /**
+     * Ensure that code generation is enabled if using SWIG interface option.
+     */
+    if (Global::config().has("swig") && !Global::config().has("generate")) {
+        Global::config().set("generate", simpleName(Global::config().get("")));
     }
 
     // ------ start souffle -------------
@@ -381,6 +325,8 @@ int main(int argc, char** argv) {
     if (Global::config().has("macro")) {
         cmd += " " + Global::config().get("macro");
     }
+    // Add RamDomain size as a macro
+    cmd += " -DRAM_DOMAIN_SIZE=" + std::to_string(RAM_DOMAIN_SIZE);
     cmd += " " + Global::config().get("");
     FILE* in = popen(cmd.c_str(), "r");
 
@@ -408,6 +354,11 @@ int main(int argc, char** argv) {
         auto parser_end = std::chrono::high_resolution_clock::now();
         std::cout << "Parse Time: " << std::chrono::duration<double>(parser_end - parser_start).count()
                   << "sec\n";
+    }
+
+    if (Global::config().get("show") == "parse-errors") {
+        std::cout << astTranslationUnit->getErrorReport();
+        return astTranslationUnit->getErrorReport().getNumErrors();
     }
 
     // ------- check for parse errors -------------
@@ -441,6 +392,12 @@ int main(int argc, char** argv) {
                     std::make_unique<RemoveEmptyRelationsTransformer>(),
                     std::make_unique<RemoveRedundantRelationsTransformer>());
 
+    // Partitioning pipeline
+    auto partitionPipeline =
+            std::make_unique<PipelineTransformer>(std::make_unique<NameUnnamedVariablesTransformer>(),
+                    std::make_unique<PartitionBodyLiteralsTransformer>(),
+                    std::make_unique<ReplaceSingletonVariablesTransformer>());
+
     // Provenance pipeline
     auto provenancePipeline = std::make_unique<PipelineTransformer>(std::make_unique<ConditionalTransformer>(
             Global::config().has("provenance"), std::make_unique<ProvenanceTransformer>()));
@@ -448,7 +405,8 @@ int main(int argc, char** argv) {
     // Main pipeline
     auto pipeline = std::make_unique<PipelineTransformer>(std::make_unique<AstComponentChecker>(),
             std::make_unique<ComponentInstantiationTransformer>(),
-            std::make_unique<UniqueAggregationVariablesTransformer>(), std::make_unique<AstSemanticChecker>(),
+            std::make_unique<UniqueAggregationVariablesTransformer>(),
+            std::make_unique<PolymorphicOperatorsTransformer>(), std::make_unique<AstSemanticChecker>(),
             std::make_unique<RemoveTypecastsTransformer>(),
             std::make_unique<RemoveBooleanConstraintsTransformer>(),
             std::make_unique<ResolveAliasesTransformer>(), std::make_unique<MinimiseProgramTransformer>(),
@@ -460,13 +418,13 @@ int main(int argc, char** argv) {
             std::make_unique<FixpointTransformer>(
                     std::make_unique<PipelineTransformer>(std::make_unique<ReduceExistentialsTransformer>(),
                             std::make_unique<RemoveRedundantRelationsTransformer>())),
-            std::make_unique<RemoveRelationCopiesTransformer>(),
-            std::make_unique<PartitionBodyLiteralsTransformer>(),
-            std::make_unique<MinimiseProgramTransformer>(),
+            std::make_unique<RemoveRelationCopiesTransformer>(), std::move(partitionPipeline),
+            std::make_unique<FixpointTransformer>(std::make_unique<MinimiseProgramTransformer>()),
             std::make_unique<RemoveRelationCopiesTransformer>(),
             std::make_unique<ReorderLiteralsTransformer>(),
             std::make_unique<PipelineTransformer>(std::make_unique<ResolveAliasesTransformer>(),
                     std::make_unique<MaterializeAggregationQueriesTransformer>()),
+            std::make_unique<RemoveRedundantSumsTransformer>(),
             std::make_unique<RemoveEmptyRelationsTransformer>(),
             std::make_unique<ReorderLiteralsTransformer>(), std::move(magicPipeline),
             std::make_unique<AstExecutionPlanChecker>(), std::move(provenancePipeline));
@@ -495,6 +453,35 @@ int main(int argc, char** argv) {
     // Apply all the transformations
     pipeline->apply(*astTranslationUnit);
 
+    if (Global::config().has("show")) {
+        // Output the transformed datalog and return
+        if (Global::config().get("show") == "transformed-datalog") {
+            std::cout << *astTranslationUnit->getProgram() << std::endl;
+            return 0;
+        }
+
+        // Output the precedence graph in graphviz dot format and return
+        if (Global::config().get("show") == "precedence-graph") {
+            astTranslationUnit->getAnalysis<PrecedenceGraph>()->print(std::cout);
+            std::cout << std::endl;
+            return 0;
+        }
+
+        // Output the scc graph in graphviz dot format and return
+        if (Global::config().get("show") == "scc-graph") {
+            astTranslationUnit->getAnalysis<SCCGraph>()->print(std::cout);
+            std::cout << std::endl;
+            return 0;
+        }
+
+        // Output the type analysis
+        if (Global::config().get("show") == "type-analysis") {
+            astTranslationUnit->getAnalysis<TypeAnalysis>()->print(std::cout);
+            std::cout << std::endl;
+            return 0;
+        }
+    }
+
     // ------- execution -------------
 
     /* translate AST to RAM */
@@ -510,82 +497,81 @@ int main(int argc, char** argv) {
             std::make_unique<CollapseFiltersTransformer>(), std::make_unique<TupleIdTransformer>(),
             std::make_unique<RamLoopTransformer>(std::make_unique<RamTransformerSequence>(
                     std::make_unique<HoistAggregateTransformer>(), std::make_unique<TupleIdTransformer>())),
+            std::make_unique<ExpandFilterTransformer>(), std::make_unique<HoistConditionsTransformer>(),
+            std::make_unique<CollapseFiltersTransformer>(),
+            std::make_unique<EliminateDuplicatesTransformer>(),
+            std::make_unique<ReorderConditionsTransformer>(),
+            std::make_unique<RamLoopTransformer>(std::make_unique<ReorderFilterBreak>()),
             std::make_unique<RamConditionalTransformer>(
-                    []() -> bool { return std::stoi(Global::config().get("jobs")) > 1; },
-                    std::make_unique<ParallelTransformer>()));
+                    // job count of 0 means all cores are used.
+                    []() -> bool { return std::stoi(Global::config().get("jobs")) != 1; },
+                    std::make_unique<ParallelTransformer>()),
+            std::make_unique<ReportIndexTransfomer>());
 
     ramTransform->apply(*ramTranslationUnit);
     if (ramTranslationUnit->getErrorReport().getNumIssues() != 0) {
         std::cerr << ramTranslationUnit->getErrorReport();
     }
 
-    if (!ramTranslationUnit->getProgram()->getMain()) {
+    // Output the transformed RAM program and return
+    if (Global::config().get("show") == "transformed-ram") {
+        std::cout << ramTranslationUnit->getProgram();
         return 0;
-    };
+    }
 
-    if (!Global::config().has("compile") && !Global::config().has("dl-program") &&
-            !Global::config().has("generate")) {
-        // ------- interpreter -------------
+    try {
+        if (!Global::config().has("compile") && !Global::config().has("dl-program") &&
+                !Global::config().has("generate") && !Global::config().has("swig")) {
+            // ------- interpreter -------------
 
-        std::thread profiler;
-        // Start up profiler if needed
-        if (Global::config().has("live-profile") && !Global::config().has("compile")) {
-            profiler = std::thread([]() { profile::Tui().runProf(); });
-        }
+            std::thread profiler;
+            // Start up profiler if needed
+            if (Global::config().has("live-profile") && !Global::config().has("compile")) {
+                profiler = std::thread([]() { profile::Tui().runProf(); });
+            }
 
-        // configure and execute interpreter
-        if (Global::config().get("interpreter") == "LVM") {
-            std::unique_ptr<LVMInterface> lvm(std::make_unique<LVM>(*ramTranslationUnit));
-            lvm->executeMain();
+            // configure and execute interpreter
+            std::unique_ptr<InterpreterEngine> interpreter(
+                    std::make_unique<InterpreterEngine>(*ramTranslationUnit));
+            interpreter->executeMain();
             // If the profiler was started, join back here once it exits.
             if (profiler.joinable()) {
                 profiler.join();
             }
-            // only run explain interface if interpreted
             if (Global::config().has("provenance")) {
-                LVMProgInterface interface(*lvm);
-                if (Global::config().get("provenance") == "explain") {
-                    explain(interface, false);
+                // Test for bugged combination of provenance, interpreted souffle, and concurrency
+                if (Global::config().get("jobs") != "1") {
+                    throw std::runtime_error("Provenance is not supported with parallel interpreted mode");
+                }
+
+                // only run explain interface if interpreted
+                InterpreterProgInterface interface(*interpreter);
+                if (Global::config().get("provenance") == "explain" ||
+                        Global::config().get("provenance") == "subtreeHeights") {
+                    explain(interface, false, Global::config().get("provenance") == "subtreeHeights");
                 } else if (Global::config().get("provenance") == "explore") {
-                    explain(interface, true);
+                    explain(interface, true, false);
                 }
             }
         } else {
-            std::unique_ptr<RAMIInterface> rami(std::make_unique<RAMI>(*ramTranslationUnit));
-            rami->executeMain();
-            // If the profiler was started, join back here once it exits.
-            if (profiler.joinable()) {
-                profiler.join();
+            // ------- compiler -------------
+
+            std::string compileCmd = ::findTool("souffle-compile", souffleExecutable, ".");
+            /* Fail if a souffle-compile executable is not found */
+            if (!isExecutable(compileCmd)) {
+                throw std::runtime_error("failed to locate souffle-compile");
             }
-            // only run explain interface if interpreted
-            if (Global::config().has("provenance")) {
-                RAMIProgInterface interface(*rami);
-                if (Global::config().get("provenance") == "explain") {
-                    explain(interface, false);
-                } else if (Global::config().get("provenance") == "explore") {
-                    explain(interface, true);
-                }
-            }
-        }
-    } else {
-        // ------- compiler -------------
+            compileCmd += " ";
 
-        std::string compileCmd = ::findTool("souffle-compile", souffleExecutable, ".");
-        /* Fail if a souffle-compile executable is not found */
-        if (!isExecutable(compileCmd)) {
-            throw std::runtime_error("failed to locate souffle-compile");
-        }
-        compileCmd += " ";
+            std::unique_ptr<Synthesiser> synthesiser = std::make_unique<Synthesiser>(*ramTranslationUnit);
 
-        std::unique_ptr<Synthesiser> synthesiser = std::make_unique<Synthesiser>(*ramTranslationUnit);
-
-        try {
             // Find the base filename for code generation and execution
             std::string baseFilename;
             if (Global::config().has("dl-program")) {
                 baseFilename = Global::config().get("dl-program");
             } else if (Global::config().has("generate")) {
                 baseFilename = Global::config().get("generate");
+
                 // trim .cpp extension if it exists
                 if (baseFilename.size() >= 4 && baseFilename.substr(baseFilename.size() - 4) == ".cpp") {
                     baseFilename = baseFilename.substr(0, baseFilename.size() - 4);
@@ -614,7 +600,10 @@ int main(int argc, char** argv) {
                 }
             }
 
-            if (Global::config().has("compile")) {
+            if (Global::config().has("swig")) {
+                compileCmd += "-s " + Global::config().get("swig") + " ";
+                compileToBinary(compileCmd, sourceFilename);
+            } else if (Global::config().has("compile")) {
                 auto start = std::chrono::high_resolution_clock::now();
                 compileToBinary(compileCmd, sourceFilename);
                 /* Report overall run-time in verbose mode */
@@ -624,25 +613,15 @@ int main(int argc, char** argv) {
                               << "sec\n";
                 }
                 // run compiled C++ program if requested.
-                if (!Global::config().has("dl-program")) {
-                    executeBinary(baseFilename
-#ifdef USE_MPI
-                            ,
-                            ((int)astTranslationUnit->getAnalysis<SCCGraph>()->getNumberOfSCCs()) + 1
-#endif
-                    );
+                if (!Global::config().has("dl-program") && !Global::config().has("swig")) {
+                    executeBinary(baseFilename);
                 }
             }
-        } catch (std::exception& e) {
-            std::cerr << e.what() << std::endl;
-            std::exit(1);
         }
+    } catch (std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        std::exit(1);
     }
-
-// finalize mpi, this is necessary for the symbol table
-#ifdef USE_MPI
-    mpi::finalize();
-#endif
 
     /* Report overall run-time in verbose mode */
     if (Global::config().has("verbose")) {

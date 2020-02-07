@@ -18,6 +18,7 @@
 
 #include "AstArgument.h"
 #include "AstRelationIdentifier.h"
+#include "AuxArityAnalysis.h"
 #include "RamRelation.h"
 #include "RelationRepresentation.h"
 #include "Util.h"
@@ -67,7 +68,16 @@ private:
     const TypeEnvironment* typeEnv = nullptr;
 
     /** RAM program */
-    std::unique_ptr<RamProgram> ramProg;
+    std::unique_ptr<RamStatement> ramMain;
+
+    /** Subroutines */
+    std::map<std::string, std::unique_ptr<RamStatement>> ramSubs;
+
+    /** RAM relations */
+    std::map<std::string, std::unique_ptr<RamRelation>> ramRels;
+
+    /** Auxiliary Arity Analysis */
+    const AuxiliaryArity* auxArityAnalysis;
 
     /**
      * Concrete attribute
@@ -268,6 +278,9 @@ private:
     /** create a RAM element access node */
     static std::unique_ptr<RamTupleElement> makeRamTupleElement(const Location& loc);
 
+    /** determine the auxiliary for relations */
+    const size_t getEvaluationArity(const AstAtom* atom) const;
+
     /**
      * assigns names to unnamed variables such that enclosing
      * constructs may be cloned without losing the variable-identity
@@ -283,7 +296,7 @@ private:
     }
 
     void makeIODirective(IODirectives& ioDirective, const AstRelation* rel, const std::string& filePath,
-            const std::string& fileExt, const bool isIntermediate);
+            const std::string& fileExt);
 
     std::vector<IODirectives> getInputIODirectives(const AstRelation* rel,
             std::string filePath = std::string(), const std::string& fileExt = std::string());
@@ -293,11 +306,12 @@ private:
 
     /** create a reference to a RAM relation */
     std::unique_ptr<RamRelationReference> createRelationReference(const std::string name, const size_t arity,
-            const std::vector<std::string> attributeNames,
+            const size_t auxiliaryArity, const std::vector<std::string> attributeNames,
             const std::vector<std::string> attributeTypeQualifiers, const RelationRepresentation structure);
 
     /** create a reference to a RAM relation */
-    std::unique_ptr<RamRelationReference> createRelationReference(const std::string name, const size_t arity);
+    std::unique_ptr<RamRelationReference> createRelationReference(
+            const std::string name, const size_t arity, const size_t auxiliaryArity);
 
     /** a utility to translate atoms to relations */
     std::unique_ptr<RamRelationReference> translateRelation(const AstAtom* atom);
@@ -351,8 +365,11 @@ private:
         virtual std::unique_ptr<RamOperation> createOperation(const AstClause& clause);
         virtual std::unique_ptr<RamCondition> createCondition(const AstClause& originalClause);
 
+        const AuxiliaryArity* auxArityAnalysis;
+
     public:
-        ClauseTranslator(AstTranslator& translator) : translator(translator) {}
+        ClauseTranslator(AstTranslator& translator)
+                : translator(translator), auxArityAnalysis(translator.auxArityAnalysis) {}
 
         std::unique_ptr<RamStatement> translateClause(
                 const AstClause& clause, const AstClause& originalClause, const int version = 0);
@@ -381,6 +398,9 @@ private:
 
     /** translate RAM code for subroutine to get subproofs */
     std::unique_ptr<RamStatement> makeSubproofSubroutine(const AstClause& clause);
+
+    /** translate RAM code for subroutine to get subproofs */
+    std::unique_ptr<RamStatement> makeSubproofSubroutineOpt(const AstClause& clause);
 
     /** translate RAM code for subroutine to get subproofs for non-existence of a tuple */
     std::unique_ptr<RamStatement> makeNegationSubproofSubroutine(const AstClause& clause);

@@ -93,7 +93,7 @@ public:
     void print(std::ostream& os) const override;
 
     bool recursive(const AstClause* clause) const {
-        return recursiveClauses.count(clause);
+        return recursiveClauses.count(clause) != 0u;
     }
 
 private:
@@ -159,7 +159,9 @@ public:
         const auto scc = relationToScc.at(relation);
         for (const auto& successor : precedenceGraph->graph().successors(relation)) {
             const auto successorScc = relationToScc.at(successor);
-            if (successorScc != scc) successorSccs.insert(successorScc);
+            if (successorScc != scc) {
+                successorSccs.insert(successorScc);
+            }
         }
         return successorSccs;
     }
@@ -170,7 +172,9 @@ public:
         const auto scc = relationToScc.at(relation);
         for (const auto& predecessor : precedenceGraph->graph().predecessors(relation)) {
             const auto predecessorScc = relationToScc.at(predecessor);
-            if (predecessorScc != scc) predecessorSccs.insert(predecessorScc);
+            if (predecessorScc != scc) {
+                predecessorSccs.insert(predecessorScc);
+            }
         }
         return predecessorSccs;
     }
@@ -277,7 +281,7 @@ public:
         const std::set<const AstRelation*>& sccRelations = sccToRelation.at(scc);
         if (sccRelations.size() == 1) {
             const AstRelation* singleRelation = *sccRelations.begin();
-            if (!precedenceGraph->graph().predecessors(singleRelation).count(singleRelation)) {
+            if (precedenceGraph->graph().predecessors(singleRelation).count(singleRelation) == 0u) {
                 return false;
             }
         }

@@ -202,10 +202,10 @@ std::unique_ptr<AstClause> ResolveAliasesTransformer::resolveAliases(const AstCl
     // -- utilities --
 
     // tests whether something is a variable
-    auto isVar = [&](const AstArgument& arg) { return dynamic_cast<const AstVariable*>(&arg); };
+    auto isVar = [&](const AstArgument& arg) { return dynamic_cast<const AstVariable*>(&arg) != nullptr; };
 
     // tests whether something is a record
-    auto isRec = [&](const AstArgument& arg) { return dynamic_cast<const AstRecordInit*>(&arg); };
+    auto isRec = [&](const AstArgument& arg) { return dynamic_cast<const AstRecordInit*>(&arg) != nullptr; };
 
     // tests whether a value `a` occurs in a term `b`
     auto occurs = [](const AstArgument& a, const AstArgument& b) {

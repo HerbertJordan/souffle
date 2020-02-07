@@ -78,7 +78,7 @@ namespace detail {
 template <typename Tuple>
 class RecordMap {
     // create blocks of a million entries
-    static const std::size_t BLOCK_SIZE = 1 << 20;
+    static constexpr std::size_t BLOCK_SIZE = 1 << 20;
 
     /** The definition of the tuple type handled by this instance */
     using tuple_type = Tuple;

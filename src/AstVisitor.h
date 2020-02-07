@@ -81,8 +81,10 @@ struct AstVisitor : public ast_visitor_tag {
         FORWARD(UserDefinedFunctor)
         FORWARD(Counter)
         FORWARD(NumberConstant)
+        FORWARD(FloatConstant)
+        FORWARD(UnsignedConstant)
         FORWARD(StringConstant)
-        FORWARD(NullConstant)
+        FORWARD(NilConstant)
         FORWARD(TypeCast)
         FORWARD(RecordInit)
         FORWARD(Aggregator)
@@ -135,17 +137,22 @@ protected:
     LINK(UnnamedVariable, Argument)
     LINK(Counter, Argument)
     LINK(TypeCast, Argument)
-    LINK(RecordInit, Argument)
     LINK(SubroutineArgument, Argument)
 
     LINK(NumberConstant, Constant)
+    LINK(FloatConstant, Constant)
+    LINK(UnsignedConstant, Constant)
     LINK(StringConstant, Constant)
-    LINK(NullConstant, Constant)
+    LINK(NilConstant, Constant)
     LINK(Constant, Argument)
 
     LINK(IntrinsicFunctor, Functor)
     LINK(UserDefinedFunctor, Functor)
-    LINK(Functor, Argument)
+
+    LINK(RecordInit, Term)
+    LINK(Functor, Term)
+
+    LINK(Term, Argument)
 
     LINK(Aggregator, Argument)
 
@@ -265,7 +272,7 @@ LambdaAstVisitor<R, N> makeLambdaAstVisitor(const std::function<R(const N&)>& fu
  */
 template <typename T>
 struct is_ast_visitor {
-    enum { value = std::is_base_of<ast_visitor_tag, T>::value };
+    static constexpr size_t value = std::is_base_of<ast_visitor_tag, T>::value;
 };
 
 template <typename T>

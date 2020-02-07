@@ -25,17 +25,17 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
     class ValueLevelVisitor : public RamVisitor<int> {
     public:
         // number
-        int visitNumber(const RamNumber& num) override {
+        int visitConstant(const RamConstant&) override {
             return -1;
         }
 
         // true
-        int visitTrue(const RamTrue& t) override {
+        int visitTrue(const RamTrue&) override {
             return -1;
         }
 
         // false
-        int visitFalse(const RamFalse& f) override {
+        int visitFalse(const RamFalse&) override {
             return -1;
         }
 
@@ -45,7 +45,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         }
 
         // scan
-        int visitScan(const RamScan& scan) override {
+        int visitScan(const RamScan&) override {
             return -1;
         }
 
@@ -53,9 +53,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitIndexScan(const RamIndexScan& indexScan) override {
             int level = -1;
             for (auto& index : indexScan.getRangePattern()) {
-                if (index != nullptr) {
-                    level = std::max(level, visit(index));
-                }
+                level = std::max(level, visit(index));
             }
             return level;
         }
@@ -69,9 +67,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitIndexChoice(const RamIndexChoice& indexChoice) override {
             int level = -1;
             for (auto& index : indexChoice.getRangePattern()) {
-                if (index != nullptr) {
-                    level = std::max(level, visit(index));
-                }
+                level = std::max(level, visit(index));
             }
             return std::max(level, visit(indexChoice.getCondition()));
         }
@@ -85,9 +81,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitIndexAggregate(const RamIndexAggregate& indexAggregate) override {
             int level = -1;
             for (auto& index : indexAggregate.getRangePattern()) {
-                if (index != nullptr) {
-                    level = std::max(level, visit(index));
-                }
+                level = std::max(level, visit(index));
             }
             level = std::max(visit(indexAggregate.getExpression()), level);
             return std::max(level, visit(indexAggregate.getCondition()));
@@ -112,9 +106,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitProject(const RamProject& project) override {
             int level = -1;
             for (auto& exp : project.getValues()) {
-                if (exp != nullptr) {
-                    level = std::max(level, visit(exp));
-                }
+                level = std::max(level, visit(exp));
             }
             return level;
         }
@@ -123,9 +115,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitSubroutineReturnValue(const RamSubroutineReturnValue& ret) override {
             int level = -1;
             for (auto& exp : ret.getValues()) {
-                if (exp != nullptr) {
-                    level = std::max(level, visit(exp));
-                }
+                level = std::max(level, visit(exp));
             }
             return level;
         }
@@ -144,9 +134,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitIntrinsicOperator(const RamIntrinsicOperator& op) override {
             int level = -1;
             for (const auto& arg : op.getArguments()) {
-                if (arg != nullptr) {
-                    level = std::max(level, visit(arg));
-                }
+                level = std::max(level, visit(arg));
             }
             return level;
         }
@@ -155,9 +143,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitPackRecord(const RamPackRecord& pack) override {
             int level = -1;
             for (const auto& arg : pack.getArguments()) {
-                if (arg != nullptr) {
-                    level = std::max(level, visit(arg));
-                }
+                level = std::max(level, visit(arg));
             }
             return level;
         }
@@ -171,9 +157,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitUserDefinedOperator(const RamUserDefinedOperator& op) override {
             int level = -1;
             for (const auto& arg : op.getArguments()) {
-                if (arg != nullptr) {
-                    level = std::max(level, visit(arg));
-                }
+                level = std::max(level, visit(arg));
             }
             return level;
         }
@@ -197,9 +181,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitExistenceCheck(const RamExistenceCheck& exists) override {
             int level = -1;
             for (const auto& cur : exists.getValues()) {
-                if (cur != nullptr) {
-                    level = std::max(level, visit(cur));
-                }
+                level = std::max(level, visit(cur));
             }
             return level;
         }
@@ -208,9 +190,7 @@ int RamLevelAnalysis::getLevel(const RamNode* node) const {
         int visitProvenanceExistenceCheck(const RamProvenanceExistenceCheck& provExists) override {
             int level = -1;
             for (const auto& cur : provExists.getValues()) {
-                if (cur != nullptr) {
-                    level = std::max(level, visit(cur));
-                }
+                level = std::max(level, visit(cur));
             }
             return level;
         }

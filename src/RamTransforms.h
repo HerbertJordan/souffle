@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "RamComplexityAnalysis.h"
+#include "RamIndexAnalysis.h"
 #include "RamLevelAnalysis.h"
 #include "RamTransformer.h"
 #include "RamTranslationUnit.h"
@@ -65,7 +67,103 @@ public:
 
 protected:
     bool transform(RamTranslationUnit& translationUnit) override {
-        return expandFilters(*translationUnit.getProgram());
+        return expandFilters(translationUnit.getProgram());
+    }
+};
+
+/**
+ * @class ReorderConditionsTransformer
+ * @brief Reorders conjunctive terms depending on cost, i.e.,
+ *        cheap terms should be executed first.
+ *
+ * For example ..
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  QUERY
+ *   ...
+ *    IF C(1) /\ C(2) /\ ... /\ C(N) then
+ *     ...
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * will be rewritten to
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  QUERY
+ *   ...
+ *    IF C(i(1)) /\ C(i(2)) /\ ... /\ C(i(N)) then
+ *      ...
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ *  where C(i(1)) <= C(i(2)) <= ....   <= C(i(N)).
+ *
+ * The terms are sorted according to their complexity class.
+ *
+ */
+
+class ReorderConditionsTransformer : public RamTransformer {
+public:
+    std::string getName() const override {
+        return "ReorderConditionsTransformer";
+    }
+
+    /**
+     * @brief Reorder conjunctive terms in filter operations
+     * @param program Program that is transformed
+     * @return Flag showing whether the program has been changed
+     *         by the transformation
+     */
+    bool reorderConditions(RamProgram& program);
+
+protected:
+    RamComplexityAnalysis* rca{nullptr};
+
+    bool transform(RamTranslationUnit& translationUnit) override {
+        rca = translationUnit.getAnalysis<RamComplexityAnalysis>();
+        return reorderConditions(translationUnit.getProgram());
+    }
+};
+
+/**
+ * @class EliminateDuplicatesTransformer
+ * @brief Eliminates duplicated conjunctive terms
+ *
+ * For example ..
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  QUERY
+ *   ...
+ *    IF C1 /\ C2 /\ ... /\  CN
+ *      ...
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * will be rewritten to
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  QUERY
+ *   ...
+ *    IF C2 /\ ... /\ CN then
+ *     ...
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * assuming that C1 and C2 are equal.
+ *
+ */
+class EliminateDuplicatesTransformer : public RamTransformer {
+public:
+    std::string getName() const override {
+        return "EliminateDuplicatesTransformer";
+    }
+
+    /**
+     * @brief Eliminate duplicated conjunctive terms
+     * @param program Program that is transformed
+     * @return Flag showing whether the program has been changed by the transformation
+     */
+    bool eliminateDuplicates(RamProgram& program);
+
+protected:
+    bool transform(RamTranslationUnit& translationUnit) override {
+        return eliminateDuplicates(translationUnit.getProgram());
     }
 };
 
@@ -108,7 +206,7 @@ public:
 
 protected:
     bool transform(RamTranslationUnit& translationUnit) override {
-        return collapseFilters(*translationUnit.getProgram());
+        return collapseFilters(translationUnit.getProgram());
     }
 };
 
@@ -175,7 +273,51 @@ protected:
 
     bool transform(RamTranslationUnit& translationUnit) override {
         rla = translationUnit.getAnalysis<RamLevelAnalysis>();
-        return hoistConditions(*translationUnit.getProgram());
+        return hoistConditions(translationUnit.getProgram());
+    }
+};
+
+/**
+ * @class ReorderBreak
+ * @brief Reorder filter-break nesting to a break-filter nesting
+ *
+ * For example ..
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  QUERY
+ *   ...
+ *    IF C1
+ *     BREAK C2
+ *      ...
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * will be rewritten to
+ *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  QUERY
+ *   ...
+ *    BREAK C2
+ *     IF C1
+ *      ...
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ */
+class ReorderFilterBreak : public RamTransformer {
+public:
+    std::string getName() const override {
+        return "ReorderFilterBreak";
+    }
+
+    /**
+     * @brief reorder filter-break nesting to break-filter nesting
+     * @param program Program that is transform
+     * @return Flag showing whether the program has been changed by the transformation
+     */
+    bool reorderFilterBreak(RamProgram& program);
+
+protected:
+    bool transform(RamTranslationUnit& translationUnit) override {
+        return reorderFilterBreak(translationUnit.getProgram());
     }
 };
 
@@ -270,7 +412,7 @@ protected:
     RamLevelAnalysis* rla{nullptr};
     bool transform(RamTranslationUnit& translationUnit) override {
         rla = translationUnit.getAnalysis<RamLevelAnalysis>();
-        return makeIndex(*translationUnit.getProgram());
+        return makeIndex(translationUnit.getProgram());
     }
 };
 
@@ -328,7 +470,7 @@ public:
 
 protected:
     bool transform(RamTranslationUnit& translationUnit) override {
-        return convertIndexScans(*translationUnit.getProgram());
+        return convertIndexScans(translationUnit.getProgram());
     }
 };
 
@@ -403,7 +545,7 @@ protected:
     RamLevelAnalysis* rla{nullptr};
     bool transform(RamTranslationUnit& translationUnit) override {
         rla = translationUnit.getAnalysis<RamLevelAnalysis>();
-        return convertScans(*translationUnit.getProgram());
+        return convertScans(translationUnit.getProgram());
     }
 };
 
@@ -445,7 +587,7 @@ public:
 
 protected:
     bool transform(RamTranslationUnit& translationUnit) override {
-        return reorderOperations(*translationUnit.getProgram());
+        return reorderOperations(translationUnit.getProgram());
     }
 };
 
@@ -477,7 +619,7 @@ protected:
     RamLevelAnalysis* rla{nullptr};
     bool transform(RamTranslationUnit& translationUnit) override {
         rla = translationUnit.getAnalysis<RamLevelAnalysis>();
-        return hoistAggregate(*translationUnit.getProgram());
+        return hoistAggregate(translationUnit.getProgram());
     }
 };
 
@@ -517,7 +659,26 @@ public:
 
 protected:
     bool transform(RamTranslationUnit& translationUnit) override {
-        return parallelizeOperations(*translationUnit.getProgram());
+        return parallelizeOperations(translationUnit.getProgram());
+    }
+};
+
+/**
+ * @class ReportIndexSetsTransformer
+ * @brief does not transform the program but reports on the index sets
+ *        if the debug-report flag is enabled.
+ *
+ */
+class ReportIndexTransfomer : public RamTransformer {
+public:
+    std::string getName() const override {
+        return "ReportIndexTransfomer";
+    }
+
+protected:
+    bool transform(RamTranslationUnit& translationUnit) override {
+        translationUnit.getAnalysis<RamIndexAnalysis>();
+        return false;
     }
 };
 

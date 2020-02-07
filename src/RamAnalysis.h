@@ -28,7 +28,13 @@ class RamTranslationUnit;
  */
 class RamAnalysis {
 public:
+    RamAnalysis(const char* id) : identifier(id) {}
     virtual ~RamAnalysis() = default;
+
+    /** @brief get name of the analysis */
+    virtual const std::string& getName() const {
+        return identifier;
+    }
 
     /** @brief Run analysis for a RAM translation unit */
     virtual void run(const RamTranslationUnit& translationUnit) = 0;
@@ -36,11 +42,15 @@ public:
     /** @brief Print the analysis result in HTML format */
     virtual void print(std::ostream& os) const {}
 
-    /** define output stream operator */
+    /** @brief define output stream operator */
     friend std::ostream& operator<<(std::ostream& out, const RamAnalysis& other) {
         other.print(out);
         return out;
     }
+
+protected:
+    /** @brief name of analysis instance */
+    std::string identifier;
 };
 
 }  // end of namespace souffle

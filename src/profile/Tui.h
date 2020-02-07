@@ -130,9 +130,9 @@ public:
             std::cout << "\x1b[27A";
             top();
             std::cout << "\x1b[B> ";
-        } else if (c[0].compare("top") == 0) {
+        } else if (c[0] == "top") {
             top();
-        } else if (c[0].compare("rel") == 0) {
+        } else if (c[0] == "rel") {
             if (c.size() == 2) {
                 relRul(c[1]);
             } else if (c.size() == 1) {
@@ -140,12 +140,12 @@ public:
             } else {
                 std::cout << "Invalid parameters to rel command.\n";
             }
-        } else if (c[0].compare("rul") == 0) {
+        } else if (c[0] == "rul") {
             if (c.size() > 1) {
-                if (c.size() == 3 && c[1].compare("id") == 0) {
+                if (c.size() == 3 && c[1] == "id") {
                     std::printf("%7s%2s%s\n\n", "ID", "", "NAME");
                     id(c[2]);
-                } else if (c.size() == 2 && c[1].compare("id") == 0) {
+                } else if (c.size() == 2 && c[1] == "id") {
                     id("0");
                 } else if (c.size() == 2) {
                     verRul(c[1]);
@@ -155,19 +155,19 @@ public:
             } else {
                 rul(resultLimit);
             }
-        } else if (c[0].compare("graph") == 0) {
+        } else if (c[0] == "graph") {
             if (c.size() == 3 && c[1].find(".") == std::string::npos) {
                 iterRel(c[1], c[2]);
             } else if (c.size() == 3 && c[1].at(0) == 'C') {
                 iterRul(c[1], c[2]);
-            } else if (c.size() == 4 && c[1].compare("ver") == 0 && c[2].at(0) == 'C') {
+            } else if (c.size() == 4 && c[1] == "ver" && c[2].at(0) == 'C') {
                 verGraph(c[2], c[3]);
             } else {
                 std::cout << "Invalid parameters to graph command.\n";
             }
-        } else if (c[0].compare("memory") == 0) {
+        } else if (c[0] == "memory") {
             memoryUsage();
-        } else if (c[0].compare("usage") == 0) {
+        } else if (c[0] == "usage") {
             if (c.size() > 1) {
                 if (c[1][0] == 'R') {
                     usageRelation(c[1]);
@@ -177,9 +177,9 @@ public:
             } else {
                 usage();
             }
-        } else if (c[0].compare("help") == 0) {
+        } else if (c[0] == "help") {
             help();
-        } else if (c[0].compare("limit") == 0) {
+        } else if (c[0] == "limit") {
             if (c.size() == 1) {
                 setResultLimit(20000);
             } else {
@@ -189,7 +189,7 @@ public:
                     std::cout << "Invalid parameters to limit command.\n";
                 }
             }
-        } else if (c[0].compare("configuration") == 0) {
+        } else if (c[0] == "configuration") {
             configuration();
         } else {
             std::cout << "Unknown command. Use \"help\" for a list of commands.\n";
@@ -1108,14 +1108,14 @@ public:
         ruleTable.sort(6);
         std::vector<std::vector<std::string>> table = Tools::formatTable(ruleTable, precision);
 
-        if (col.compare("0") == 0) {
+        if (col == "0") {
             std::printf("%7s%2s%s\n\n", "ID", "", "NAME");
             for (auto& row : table) {
                 std::printf("%7s%2s%s\n", row[6].c_str(), "", row[5].c_str());
             }
         } else {
             for (auto& row : table) {
-                if (row[6].compare(col) == 0) {
+                if (row[6] == col) {
                     std::printf("%7s%2s%s\n", row[6].c_str(), "", row[5].c_str());
                 }
             }
@@ -1134,7 +1134,7 @@ public:
         std::string name = "";
         for (auto& row : formattedRelationTable) {
             // Test for relation name or relation id
-            if (row[5].compare(str) == 0 || row[6].compare(str) == 0) {
+            if (row[5] == str || row[6] == str) {
                 std::printf("%8s%8s%8s%8s%8s %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str(),
                         row[4].c_str(), row[6].c_str(), row[5].c_str());
                 name = row[5];
@@ -1143,7 +1143,7 @@ public:
         }
         std::cout << " ---------------------------------------------------------\n";
         for (auto& row : formattedRuleTable) {
-            if (row[7].compare(name) == 0) {
+            if (row[7] == name) {
                 std::printf("%8s%8s%8s%8s%8s %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str(),
                         row[4].c_str(), row[6].c_str(), row[7].c_str());
             }
@@ -1155,7 +1155,7 @@ public:
         }
         std::cout << "\nSrc locator: " << src << "\n\n";
         for (auto& row : formattedRuleTable) {
-            if (row[7].compare(name) == 0) {
+            if (row[7] == name) {
                 std::printf("%7s%2s%s\n", row[6].c_str(), "", row[5].c_str());
             }
         }
@@ -1181,7 +1181,7 @@ public:
         std::string srcLocator;
         // Check that the rule exists, and print it out if so.
         for (auto& row : formattedRuleTable) {
-            if (row[6].compare(str) == 0) {
+            if (row[6] == str) {
                 std::cout << row[5] << std::endl;
                 found = true;
                 ruleName = row[5];
@@ -1206,7 +1206,7 @@ public:
         std::cout << "  ----- Rule Versions Table -----\n";
         std::printf("%8s%8s%8s%16s%6s\n\n", "TOT_T", "NREC_T", "REC_T", "TUPLES", "VER");
         for (auto& row : formattedRuleTable) {
-            if (row[6].compare(str) == 0) {
+            if (row[6] == str) {
                 std::printf("%8s%8s%8s%16s%6s\n", row[0].c_str(), row[1].c_str(), row[2].c_str(),
                         row[4].c_str(), "");
             }
@@ -1235,24 +1235,24 @@ public:
         std::vector<std::vector<std::string>> table = Tools::formatTable(relationTable, -1);
         std::vector<std::shared_ptr<Iteration>> iter;
         for (auto& row : table) {
-            if (row[6].compare(c) == 0) {
+            if (row[6] == c) {
                 std::printf("%4s%2s%s\n\n", row[6].c_str(), "", row[5].c_str());
                 iter = run->getRelation(row[5])->getIterations();
-                if (col.compare("tot_t") == 0) {
+                if (col == "tot_t") {
                     std::vector<std::chrono::microseconds> list;
                     for (auto& i : iter) {
                         list.emplace_back(i->getRuntime());
                     }
                     std::printf("%4s   %s\n\n", "NO", "RUNTIME");
                     graphByTime(list);
-                } else if (col.compare("copy_t") == 0) {
+                } else if (col == "copy_t") {
                     std::vector<std::chrono::microseconds> list;
                     for (auto& i : iter) {
                         list.emplace_back(i->getCopytime());
                     }
                     std::printf("%4s   %s\n\n", "NO", "COPYTIME");
                     graphByTime(list);
-                } else if (col.compare("tuples") == 0) {
+                } else if (col == "tuples") {
                     std::vector<size_t> list;
                     for (auto& i : iter) {
                         list.emplace_back(i->size());
@@ -1264,25 +1264,25 @@ public:
             }
         }
         for (auto& row : table) {
-            if (row[5].compare(c) == 0) {
+            if (row[5] == c) {
                 std::printf("%4s%2s%s\n\n", row[6].c_str(), "", row[5].c_str());
                 const std::shared_ptr<ProgramRun>& run = out.getProgramRun();
                 iter = run->getRelation(row[5])->getIterations();
-                if (col.compare("tot_t") == 0) {
+                if (col == "tot_t") {
                     std::vector<std::chrono::microseconds> list;
                     for (auto& i : iter) {
                         list.emplace_back(i->getRuntime());
                     }
                     std::printf("%4s   %s\n\n", "NO", "RUNTIME");
                     graphByTime(list);
-                } else if (col.compare("copy_t") == 0) {
+                } else if (col == "copy_t") {
                     std::vector<std::chrono::microseconds> list;
                     for (auto& i : iter) {
                         list.emplace_back(i->getCopytime());
                     }
                     std::printf("%4s   %s\n\n", "NO", "COPYTIME");
                     graphByTime(list);
-                } else if (col.compare("tuples") == 0) {
+                } else if (col == "tuples") {
                     std::vector<size_t> list;
                     for (auto& i : iter) {
                         list.emplace_back(i->size());
@@ -1299,17 +1299,17 @@ public:
         std::vector<std::vector<std::string>> table = Tools::formatTable(ruleTable, precision);
         std::vector<std::shared_ptr<Iteration>> iter;
         for (auto& row : table) {
-            if (row[6].compare(c) == 0) {
+            if (row[6] == c) {
                 std::printf("%6s%2s%s\n\n", row[6].c_str(), "", row[5].c_str());
                 const std::shared_ptr<ProgramRun>& run = out.getProgramRun();
                 iter = run->getRelation(row[7])->getIterations();
-                if (col.compare("tot_t") == 0) {
+                if (col == "tot_t") {
                     std::vector<std::chrono::microseconds> list;
                     for (auto& i : iter) {
                         bool add = false;
                         std::chrono::microseconds totalTime{};
                         for (auto& rul : i->getRules()) {
-                            if (rul.second->getId().compare(c) == 0) {
+                            if (rul.second->getId() == c) {
                                 totalTime += rul.second->getRuntime();
                                 add = true;
                             }
@@ -1320,13 +1320,13 @@ public:
                     }
                     std::printf("%4s   %s\n\n", "NO", "RUNTIME");
                     graphByTime(list);
-                } else if (col.compare("tuples") == 0) {
+                } else if (col == "tuples") {
                     std::vector<size_t> list;
                     for (auto& i : iter) {
                         bool add = false;
                         size_t totalSize = 0L;
                         for (auto& rul : i->getRules()) {
-                            if (rul.second->getId().compare(c) == 0) {
+                            if (rul.second->getId() == c) {
                                 totalSize += rul.second->size();
                                 add = true;
                             }
@@ -1355,21 +1355,21 @@ public:
         Table versionTable = out.getVersions(strRel, c);
         std::printf("%6s%2s%s\n\n", (*versionTable.rows[0])[6]->toString(0).c_str(), "",
                 (*versionTable.rows[0])[5]->toString(0).c_str());
-        if (col.compare("tot_t") == 0) {
+        if (col == "tot_t") {
             std::vector<std::chrono::microseconds> list;
             for (auto& row : versionTable.rows) {
                 list.emplace_back((*row)[0]->getTimeVal());
             }
             std::printf("%4s   %s\n\n", "NO", "RUNTIME");
             graphByTime(list);
-        } else if (col.compare("copy_t") == 0) {
+        } else if (col == "copy_t") {
             std::vector<std::chrono::microseconds> list;
             for (auto& row : versionTable.rows) {
                 list.emplace_back((*row)[3]->getTimeVal());
             }
             std::printf("%4s   %s\n\n", "NO", "COPYTIME");
             graphByTime(list);
-        } else if (col.compare("tuples") == 0) {
+        } else if (col == "tuples") {
             std::vector<size_t> list;
             for (auto& row : versionTable.rows) {
                 list.emplace_back((*row)[4]->getLongVal());

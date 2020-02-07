@@ -19,11 +19,14 @@
 #pragma once
 
 #include "LambdaBTree.h"
+#include "ParallelUtils.h"
 #include "UnionFind.h"
 #include "Util.h"
 #include <algorithm>
 #include <exception>
+#include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <unordered_map>
 #include <utility>
 
@@ -41,6 +44,8 @@ class EquivalenceRelation {
             souffle::EqrelMapComparator<StorePair>>;
 
 public:
+    using element_type = TupleType;
+
     EquivalenceRelation() : statesMapStale(false){};
     ~EquivalenceRelation() {
         emptyPartition();
@@ -66,6 +71,16 @@ public:
     bool insert(value_type x, value_type y) {
         operation_hints z;
         return insert(x, y, z);
+    };
+
+    /**
+     * Insert the tuple symbolically.
+     * @param tuple The tuple to be inserted
+     * @return true if the tuple is new to the data structure
+     */
+    bool insert(const TupleType& tuple) {
+        operation_hints hints;
+        return insert(tuple[0], tuple[1], hints);
     };
 
     /**
@@ -161,6 +176,14 @@ public:
     bool contains(value_type x, value_type y) const {
         return sds.contains(x, y);
     }
+
+    /**
+     * Returns whether there exists given tuple.
+     * @param tuple The tuple to search for.
+     */
+    bool contains(const TupleType& tuple, operation_hints&) const {
+        return contains(tuple[0], tuple[1]);
+    };
 
     void emptyPartition() const {
         // delete the beautiful values inside (they're raw ptrs, so they need to be.)
@@ -312,7 +335,9 @@ public:
 
         /* pre-increment */
         iterator& operator++() {
-            if (isEndVal) throw std::out_of_range("error: incrementing an out of range iterator");
+            if (isEndVal) {
+                throw std::out_of_range("error: incrementing an out of range iterator");
+            }
 
             switch (ityp) {
                 case IterType::ALL:
@@ -331,8 +356,9 @@ public:
 
                             // we can't iterate along this djset if it is empty
                             djSetList = (*djSetMapListIt).second;
-                            if (djSetList->size() == 0)
+                            if (djSetList->size() == 0) {
                                 throw std::out_of_range("error: encountered a zero size djset");
+                            }
 
                             // update our cAnterior and cPosterior
                             cAnteriorIndex = 0;
@@ -486,6 +512,49 @@ public:
     }
 
     /**
+     * Act similar to getBoundaries. But non-static.
+     * This function should be used ONLY by interpreter,
+     * and its behavior is tightly coupling with InterpreterIndex.
+     * Do Not rely on this interface outside the interpreter.
+     *
+     * @param entry the entry to be looking for
+     * @return the corresponding range of matching elements
+     */
+    iterator lower_bound(const TupleType& entry, operation_hints&) const {
+        if (entry[0] == MIN_RAM_DOMAIN && entry[1] == MIN_RAM_DOMAIN) {
+            // Return an iterator over all tuples.
+            return begin();
+        }
+
+        if (entry[0] != MIN_RAM_DOMAIN && entry[1] == MIN_RAM_DOMAIN) {
+            // Return an iterator over all (entry[0], _)
+
+            if (!sds.nodeExists(entry[0])) {
+                return end();
+            }
+            return anteriorIt(entry[0]);
+        }
+
+        if (entry[0] != MIN_RAM_DOMAIN && entry[1] != MIN_RAM_DOMAIN) {
+            // Return an iterator point to the exact same node.
+
+            if (!sds.contains(entry[0], entry[1])) {
+                return end();
+            }
+            return antpostit(entry[0], entry[1]);
+        }
+
+        return end();
+    }
+
+    /**
+     * Check emptiness.
+     */
+    bool empty() const {
+        return this->size() == 0;
+    }
+
+    /**
      * Creates an iterator that generates all pairs (A, X)
      * for a given A, and X are elements within A's disjoint set.
      * @param anteriorVal: The first value of the tuple to be generated for
@@ -599,7 +668,7 @@ private:
     mutable souffle::SparseDisjointSet<value_type> sds;
 
     // read/write lock on equivalencePartition
-    mutable souffle::shared_mutex statesLock;
+    mutable std::shared_mutex statesLock;
 
     mutable StatesMap equivalencePartition;
     // whether the cache is stale

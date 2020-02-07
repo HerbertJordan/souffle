@@ -8,9 +8,9 @@
 
 /************************************************************************
  *
- * @file type_system_test.h
+ * @file ast_parser_utils_test.cpp
  *
- * Tests souffle's type system operations.
+ * Tests souffle's parser utils.
  *
  ***********************************************************************/
 

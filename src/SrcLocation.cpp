@@ -43,7 +43,7 @@ std::string SrcLocation::extloc() const {
 
             // Offset column to account for C preprocessor having reduced
             // consecutive non-leading whitespace chars to a single space.
-            if (std::isspace(c)) {
+            if (std::isspace(c) != 0) {
                 if (afterFirstNonSpace && prevWhitespace && offsetColumn >= lineLen) {
                     offsetColumn++;
                 }

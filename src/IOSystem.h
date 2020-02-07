@@ -15,6 +15,7 @@
 #pragma once
 
 #include "IODirectives.h"
+#include "RamTypes.h"
 #include "ReadStream.h"
 #include "ReadStreamCSV.h"
 #include "SymbolTable.h"
@@ -50,24 +51,25 @@ public:
     /**
      * Return a new WriteStream
      */
-    std::unique_ptr<WriteStream> getWriter(const std::vector<bool>& symbolMask,
-            const SymbolTable& symbolTable, const IODirectives& ioDirectives, const bool provenance) const {
+    std::unique_ptr<WriteStream> getWriter(const std::vector<RamTypeAttribute>& symbolMask,
+            const SymbolTable& symbolTable, const IODirectives& ioDirectives,
+            const size_t auxiliaryArity) const {
         std::string ioType = ioDirectives.getIOType();
         if (outputFactories.count(ioType) == 0) {
             throw std::invalid_argument("Requested output type <" + ioType + "> is not supported.");
         }
-        return outputFactories.at(ioType)->getWriter(symbolMask, symbolTable, ioDirectives, provenance);
+        return outputFactories.at(ioType)->getWriter(symbolMask, symbolTable, ioDirectives, auxiliaryArity);
     }
     /**
      * Return a new ReadStream
      */
-    std::unique_ptr<ReadStream> getReader(const std::vector<bool>& symbolMask, SymbolTable& symbolTable,
-            const IODirectives& ioDirectives, const bool provenance) const {
+    std::unique_ptr<ReadStream> getReader(const std::vector<RamTypeAttribute>& symbolMask,
+            SymbolTable& symbolTable, const IODirectives& ioDirectives, const size_t auxiliaryArity) const {
         std::string ioType = ioDirectives.getIOType();
         if (inputFactories.count(ioType) == 0) {
             throw std::invalid_argument("Requested input type <" + ioType + "> is not supported.");
         }
-        return inputFactories.at(ioType)->getReader(symbolMask, symbolTable, ioDirectives, provenance);
+        return inputFactories.at(ioType)->getReader(symbolMask, symbolTable, ioDirectives, auxiliaryArity);
     }
     ~IOSystem() = default;
 

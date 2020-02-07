@@ -118,7 +118,7 @@ private:
     /** split string */
     static std::vector<std::string> split(std::string str, std::string split_str) {
         // repeat value when splitting so "a   b" -> ["a","b"] not ["a","","","","b"]
-        bool repeat = (split_str.compare(" ") == 0);
+        bool repeat = (split_str == " ");
 
         std::vector<std::string> elems;
 
@@ -127,8 +127,9 @@ private:
         for (size_t i = 0; i < str.size(); i++) {
             if (repeat) {
                 if (str.at(i) == split_str.at(0)) {
-                    while (str.at(++i) == split_str.at(0))
+                    while (str.at(++i) == split_str.at(0)) {
                         ;  // set i to be at the end of the search string
+                    }
                     elems.push_back(temp);
                     temp = "";
                 }

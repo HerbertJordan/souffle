@@ -10,7 +10,7 @@
  *
  * @file ProvenanceTransformer.cpp
  *
- * Implements AstTransformer for adding provenance information via two extra columns
+ * Implements AstTransformer for adding provenance information via extra columns
  *
  ***********************************************************************/
 
@@ -25,9 +25,12 @@
 #include "AstTransforms.h"
 #include "AstTranslationUnit.h"
 #include "AstType.h"
+#include "AstUtils.h"
 #include "AstVisitor.h"
+#include "AuxArityAnalysis.h"
 #include "BinaryConstraintOps.h"
 #include "FunctorOps.h"
+#include "Global.h"
 #include "RelationRepresentation.h"
 #include "Util.h"
 #include <cassert>
@@ -67,6 +70,8 @@ std::unique_ptr<AstRelation> makeInfoRelation(
     // initialise info relation
     auto infoRelation = new AstRelation();
     infoRelation->setName(name);
+    // set qualifier to INFO_RELATION
+    infoRelation->setQualifier(INFO_RELATION);
 
     // create new clause containing a single fact
     auto infoClause = new AstClause();
@@ -138,11 +143,11 @@ std::unique_ptr<AstRelation> makeInfoRelation(
                 std::string atomDescription = relName;
 
                 for (auto& arg : atom->getArguments()) {
-                    if (dynamic_cast<AstVariable*>(arg)) {
+                    if (dynamic_cast<AstVariable*>(arg) != nullptr) {
                         std::stringstream argDescription;
                         arg->print(argDescription);
                         atomDescription.append("," + argDescription.str());
-                    } else if (dynamic_cast<AstAggregator*>(arg)) {
+                    } else if (dynamic_cast<AstAggregator*>(arg) != nullptr) {
                         atomDescription.append(",agg_" + std::to_string(aggregateNumber++));
                     }
                 }
@@ -162,7 +167,7 @@ std::unique_ptr<AstRelation> makeInfoRelation(
                 std::stringstream argDescription;
                 var->print(argDescription);
                 constraintDescription.append("," + argDescription.str());
-            } else if (dynamic_cast<AstAggregator*>(con->getLHS())) {
+            } else if (dynamic_cast<AstAggregator*>(con->getLHS()) != nullptr) {
                 constraintDescription.append(",agg_" + std::to_string(aggregateNumber++));
             }
 
@@ -170,7 +175,7 @@ std::unique_ptr<AstRelation> makeInfoRelation(
                 std::stringstream argDescription;
                 var->print(argDescription);
                 constraintDescription.append("," + argDescription.str());
-            } else if (dynamic_cast<AstAggregator*>(con->getRHS())) {
+            } else if (dynamic_cast<AstAggregator*>(con->getRHS()) != nullptr) {
                 constraintDescription.append(",agg_" + std::to_string(aggregateNumber++));
             }
 
@@ -253,7 +258,143 @@ void transformEqrelRelation(AstRelation& rel) {
     rel.addClause(std::unique_ptr<AstClause>(reflexiveClause));
 }
 
-bool ProvenanceTransformer::transform(AstTranslationUnit& translationUnit) {
+bool ProvenanceTransformer::transformSubtreeHeights(AstTranslationUnit& translationUnit) {
+    static auto program = translationUnit.getProgram();
+    const auto& auxArityAnalysis = *translationUnit.getAnalysis<AuxiliaryArity>();
+
+    // get next level number
+    auto getNextLevelNumber = [&](std::vector<AstArgument*> levels) {
+        if (levels.empty()) {
+            return static_cast<AstArgument*>(new AstNumberConstant(0));
+        }
+
+        if (levels.size() == 1) {
+            return static_cast<AstArgument*>(new AstIntrinsicFunctor(FunctorOp::ADD,
+                    std::unique_ptr<AstArgument>(levels[0]), std::make_unique<AstNumberConstant>(1)));
+        }
+
+        auto currentMax = new AstIntrinsicFunctor(FunctorOp::MAX, std::unique_ptr<AstArgument>(levels[0]),
+                std::unique_ptr<AstArgument>(levels[1]));
+
+        for (size_t i = 2; i < levels.size(); i++) {
+            currentMax = new AstIntrinsicFunctor(FunctorOp::MAX, std::unique_ptr<AstArgument>(currentMax),
+                    std::unique_ptr<AstArgument>(levels[i]));
+        }
+
+        return static_cast<AstArgument*>(new AstIntrinsicFunctor(FunctorOp::ADD,
+                std::unique_ptr<AstArgument>(currentMax), std::make_unique<AstNumberConstant>(1)));
+    };
+
+    for (auto relation : program->getRelations()) {
+        if (relation->getRepresentation() == RelationRepresentation::EQREL) {
+            transformEqrelRelation(*relation);
+        }
+
+        // generate info relations for each clause
+        // do this before all other transformations so that we record
+        // the original rule without any instrumentation
+        size_t clauseNum = 1;
+        for (auto clause : relation->getClauses()) {
+            if (!isFact(*clause)) {
+                clause->setClauseNum(clauseNum);
+
+                // add info relation
+                program->addRelation(makeInfoRelation(*clause, translationUnit));
+
+                clauseNum++;
+            }
+        }
+
+        relation->addAttribute(
+                std::make_unique<AstAttribute>(std::string("@rule_number"), AstTypeIdentifier("number")));
+        relation->addAttribute(
+                std::make_unique<AstAttribute>(std::string("@level_number"), AstTypeIdentifier("number")));
+        for (size_t i = 0; i < auxArityAnalysis.getArity(relation) - 2; i++) {
+            relation->addAttribute(std::make_unique<AstAttribute>(
+                    std::string("@sublevel_number_" + std::to_string(i)), AstTypeIdentifier("number")));
+        }
+        for (auto clause : relation->getClauses()) {
+            std::function<std::unique_ptr<AstNode>(std::unique_ptr<AstNode>)> rewriter =
+                    [&](std::unique_ptr<AstNode> node) -> std::unique_ptr<AstNode> {
+                // add provenance columns
+                if (auto atom = dynamic_cast<AstAtom*>(node.get())) {
+                    // rule number
+                    atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                    // max level
+                    atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                    // level number
+                    for (size_t i = 0; i < auxArityAnalysis.getArity(atom) - 2; i++) {
+                        atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                    }
+                } else if (auto neg = dynamic_cast<AstNegation*>(node.get())) {
+                    auto atom = neg->getAtom();
+                    // rule number
+                    atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                    // max level
+                    atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                    // level number
+                    for (size_t i = 0; i < auxArityAnalysis.getArity(atom) - 2; i++) {
+                        atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                    }
+                }
+
+                // otherwise - apply mapper recursively
+                node->apply(makeLambdaAstMapper(rewriter));
+                return node;
+            };
+
+            // add unnamed vars to each atom nested in arguments of head
+            clause->getHead()->apply(makeLambdaAstMapper(rewriter));
+
+            // if fact, level number is 0
+            if (isFact(*clause)) {
+                clause->getHead()->addArgument(std::make_unique<AstNumberConstant>(0));
+                for (size_t i = 0; i < auxArityAnalysis.getArity(relation) - 1; i++) {
+                    clause->getHead()->addArgument(std::make_unique<AstNumberConstant>(0));
+                }
+            } else {
+                std::vector<AstArgument*> bodyLevels;
+
+                for (size_t i = 0; i < clause->getBodyLiterals().size(); i++) {
+                    auto lit = clause->getBodyLiterals()[i];
+
+                    // add unnamed vars to each atom nested in arguments of lit
+                    lit->apply(makeLambdaAstMapper(rewriter));
+
+                    // add provenance columns to lit; first rule num, then level nums
+                    if (auto atom = dynamic_cast<AstAtom*>(lit)) {
+                        // rule num
+                        atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                        atom->addArgument(
+                                std::make_unique<AstVariable>("@level_number_" + std::to_string(i)));
+                        // level nums
+                        for (size_t j = 0; j < auxArityAnalysis.getArity(atom) - 2; j++) {
+                            atom->addArgument(std::make_unique<AstUnnamedVariable>());
+                        }
+                        bodyLevels.push_back(new AstVariable("@level_number_" + std::to_string(i)));
+                    }
+                }
+
+                // add provenance columns to head lit
+                // rule number
+                clause->getHead()->addArgument(std::make_unique<AstNumberConstant>(clause->getClauseNum()));
+                // max level
+                clause->getHead()->addArgument(std::unique_ptr<AstArgument>(getNextLevelNumber(bodyLevels)));
+                // level numbers
+                for (size_t j = 0; j < clause->getAtoms().size(); j++) {
+                    clause->getHead()->addArgument(
+                            std::make_unique<AstVariable>("@level_number_" + std::to_string(j)));
+                }
+                for (size_t j = clause->getAtoms().size(); j < auxArityAnalysis.getArity(relation) - 2; j++) {
+                    clause->getHead()->addArgument(std::make_unique<AstNumberConstant>(-1));
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool ProvenanceTransformer::transformMaxHeight(AstTranslationUnit& translationUnit) {
     auto program = translationUnit.getProgram();
 
     // get next level number
@@ -289,7 +430,7 @@ bool ProvenanceTransformer::transform(AstTranslationUnit& translationUnit) {
         // the original rule without any instrumentation
         size_t clauseNum = 1;
         for (auto clause : relation->getClauses()) {
-            if (!clause->isFact()) {
+            if (!isFact(*clause)) {
                 clause->setClauseNum(clauseNum);
 
                 // add info relation
@@ -330,7 +471,7 @@ bool ProvenanceTransformer::transform(AstTranslationUnit& translationUnit) {
             clause->getHead()->apply(M());
 
             // if fact, level number is 0
-            if (clause->isFact()) {
+            if (isFact(*clause)) {
                 clause->getHead()->addArgument(std::make_unique<AstNumberConstant>(0));
                 clause->getHead()->addArgument(std::make_unique<AstNumberConstant>(0));
             } else {
@@ -357,6 +498,14 @@ bool ProvenanceTransformer::transform(AstTranslationUnit& translationUnit) {
         }
     }
     return true;
+}
+
+bool ProvenanceTransformer::transform(AstTranslationUnit& translationUnit) {
+    if (Global::config().get("provenance") == "subtreeHeights") {
+        return ProvenanceTransformer::transformSubtreeHeights(translationUnit);
+    } else {
+        return ProvenanceTransformer::transformMaxHeight(translationUnit);
+    }
 }
 
 }  // end of namespace souffle

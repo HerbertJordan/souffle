@@ -29,7 +29,9 @@ enum class RelationRepresentation {
     // btree data-structure
     BRIE,
     // equivalence relation
-    EQREL
+    EQREL,
+    // info relation
+    INFO
 };
 
 inline std::ostream& operator<<(std::ostream& os, RelationRepresentation structure) {
@@ -42,6 +44,9 @@ inline std::ostream& operator<<(std::ostream& os, RelationRepresentation structu
             break;
         case RelationRepresentation::EQREL:
             os << "eqrel";
+            break;
+        case RelationRepresentation::INFO:
+            os << "info";
             break;
         case RelationRepresentation::DEFAULT:
         default:

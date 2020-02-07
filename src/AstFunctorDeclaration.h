@@ -30,58 +30,12 @@ namespace souffle {
  */
 
 class AstFunctorDeclaration : public AstNode {
-private:
-    /** name of functor */
-    const std::string name;
-
-    /** name of type */
-    const std::string type;
-
 public:
     AstFunctorDeclaration(const std::string& name, const std::string& type) : name(name), type(type) {
         assert(name.length() > 0 && "functor name is empty");
         assert(type.length() > 0 && "type is empty");
     }
 
-    const std::string& getName() const {
-        return name;
-    }
-
-    const std::string& getType() const {
-        return type;
-    }
-
-    /** get number of arguments */
-    size_t getArgCount() const {
-        assert(type.length() > 0 && "wrong type declaration for user-defined functor");
-        return type.length() - 1;
-    }
-
-    /** is return type a symbolic value */
-    bool isSymbolic() const {
-        assert(type.length() > 0 && "wrong type declaration for user-defined functor");
-        return (type[type.length() - 1] == 'S');
-    }
-
-    /** is return type a number value */
-    bool isNumerical() const {
-        assert(type.length() > 0 && "wrong type declaration for user-defined functor");
-        return (type[type.length() - 1] == 'N');
-    }
-
-    /** accepts the i-th argument as a symbolic value */
-    bool acceptsSymbols(size_t idx) const {
-        assert(idx <= getArgCount() && "argument index out of bound");
-        return (type[idx] == 'S');
-    }
-
-    /** accepts the i-th argument as a number value */
-    bool acceptsNumbers(size_t idx) const {
-        assert(idx <= getArgCount() && "argument index out of bound");
-        return (type[idx] == 'N');
-    }
-
-    /** print */
     void print(std::ostream& out) const override {
         auto convert = [&](char type) {
             switch (type) {
@@ -102,15 +56,44 @@ public:
         out << "):" << convert(type[type.length() - 1]) << std::endl;
     }
 
-    /** get children */
-    std::vector<const AstNode*> getChildNodes() const override {
-        std::vector<const AstNode*> res;
-        return res;  // no child nodes
+    /** get name */
+    const std::string& getName() const {
+        return name;
     }
 
-    /** apply */
-    void apply(const AstNodeMapper& /*mapper*/) override {
-        // nothing to do
+    /** get type */
+    const std::string& getType() const {
+        return type;
+    }
+
+    /** get number of arguments */
+    size_t getArity() const {
+        assert(type.length() > 0 && "wrong type declaration for user-defined functor");
+        return type.length() - 1;
+    }
+
+    /** is return type a symbolic value */
+    bool isSymbolic() const {
+        assert(type.length() > 0 && "wrong type declaration for user-defined functor");
+        return (type[type.length() - 1] == 'S');
+    }
+
+    /** is return type a number value */
+    bool isNumerical() const {
+        assert(type.length() > 0 && "wrong type declaration for user-defined functor");
+        return (type[type.length() - 1] == 'N');
+    }
+
+    /** accepts the i-th argument as a symbolic value */
+    bool acceptsSymbols(size_t idx) const {
+        assert(idx <= getArity() && "argument index out of bound");
+        return (type[idx] == 'S');
+    }
+
+    /** accepts the i-th argument as a number value */
+    bool acceptsNumbers(size_t idx) const {
+        assert(idx <= getArity() && "argument index out of bound");
+        return (type[idx] == 'N');
     }
 
     /** clone */
@@ -126,6 +109,12 @@ protected:
         const auto& other = static_cast<const AstFunctorDeclaration&>(node);
         return name == other.name && type == other.type;
     }
+
+    /** name of functor */
+    const std::string name;
+
+    /** name of type */
+    const std::string type;
 };
 
 }  // end of namespace souffle

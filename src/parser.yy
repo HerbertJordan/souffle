@@ -39,9 +39,9 @@
     #include "AstParserUtils.h"
     #include "AstPragma.h"
     #include "AstProgram.h"
-    #include "AstTypes.h"
     #include "BinaryConstraintOps.h"
     #include "FunctorOps.h"
+    #include "RamTypes.h"
 
     using namespace souffle;
 
@@ -79,7 +79,8 @@
 %token END 0                     "end of file"
 %token <std::string> STRING      "symbol"
 %token <std::string> IDENT       "identifier"
-%token <AstDomain> NUMBER        "number"
+%token <RamDomain> NUMBER        "number"
+%token <RamFloat> FLOAT          "float"
 %token <std::string> RELOP       "relational operator"
 %token PRAGMA                    "pragma directive"
 %token OUTPUT_QUALIFIER          "relation qualifier output"
@@ -92,7 +93,7 @@
 %token INLINE_QUALIFIER          "relation qualifier inline"
 %token TMATCH                    "match predicate"
 %token TCONTAINS                 "checks whether substring is contained in a string"
-%token CAT                       "concatenation of two strings"
+%token CAT                       "concatenation of strings"
 %token ORD                       "ordinal number of a string"
 %token STRLEN                    "length of a string"
 %token SUBSTR                    "sub-string of a string"
@@ -116,8 +117,14 @@
 %token INSTANTIATE               "component instantiation"
 %token NUMBER_TYPE               "numeric type declaration"
 %token SYMBOL_TYPE               "symbolic type declaration"
-%token TONUMBER                  "convert string to number"
+%token TONUMBER                  "convert string to (signed) number"
 %token TOSTRING                  "convert number to string"
+%token ITOU                      "convert int to unsigned"
+%token ITOF                      "convert int to float"
+%token UTOI                      "convert unsigned to int"
+%token UTOF                      "convert unsigned to float"
+%token FTOI                      "convert float to int"
+%token FTOU                      "convert float to unsigned"
 %token AS                        "type cast"
 %token AT                        "@"
 %token NIL                       "nil reference"
@@ -346,15 +353,15 @@ identifier
 /* Type declarations */
 type
   : NUMBER_TYPE IDENT {
-        $$ = new AstPrimitiveType($IDENT, true);
+        $$ = new AstPrimitiveType($IDENT, RamTypeAttribute::Signed);
         $$->setSrcLoc(@$);
     }
   | SYMBOL_TYPE IDENT {
-        $$ = new AstPrimitiveType($IDENT, false);
+        $$ = new AstPrimitiveType($IDENT, RamTypeAttribute::Symbol);
         $$->setSrcLoc(@$);
     }
   | TYPE IDENT {
-        $$ = new AstPrimitiveType($IDENT);
+        $$ = new AstPrimitiveType($IDENT, RamTypeAttribute::Symbol);
         $$->setSrcLoc(@$);
     }
   | TYPE IDENT EQUALS union_type_list {
@@ -847,6 +854,10 @@ arg
         $$ = new AstStringConstant(driver.getSymbolTable(), $STRING);
         $$->setSrcLoc(@$);
     }
+  | FLOAT {
+        $$ = new AstFloatConstant($FLOAT);
+        $$->setSrcLoc(@$);
+    }
   | NUMBER {
         $$ = new AstNumberConstant($NUMBER);
         $$->setSrcLoc(@$);
@@ -880,7 +891,7 @@ arg
 
     /* record constructor */
   | NIL {
-        $$ = new AstNullConstant();
+        $$ = new AstNilConstant();
         $$->setSrcLoc(@$);
     }
   /* TODO (azreika): in next version: prepend records with identifiers */
@@ -926,7 +937,7 @@ arg
     /* unary functors */
   | MINUS arg[nested_arg] %prec NEG {
         if (const AstNumberConstant* original = dynamic_cast<const AstNumberConstant*>($nested_arg)) {
-            $$ = new AstNumberConstant(-1 * original->getIndex());
+            $$ = new AstNumberConstant(-1 * original->getRamRepresentation());
             $$->setSrcLoc(@nested_arg);
         } else {
             $$ = new AstIntrinsicFunctor(FunctorOp::NEG,
@@ -973,6 +984,48 @@ arg
     }
   | TOSTRING LPAREN arg[nested_arg] RPAREN {
         $$ = new AstIntrinsicFunctor(FunctorOp::TOSTRING,
+                std::unique_ptr<AstArgument>($nested_arg));
+        $$->setSrcLoc(@$);
+
+        $nested_arg = nullptr;
+    }
+  | ITOU LPAREN arg[nested_arg] RPAREN {
+        $$ = new AstIntrinsicFunctor(FunctorOp::ITOU,
+                std::unique_ptr<AstArgument>($nested_arg));
+        $$->setSrcLoc(@$);
+
+        $nested_arg = nullptr;
+    }
+  | ITOF LPAREN arg[nested_arg] RPAREN {
+        $$ = new AstIntrinsicFunctor(FunctorOp::ITOF,
+                std::unique_ptr<AstArgument>($nested_arg));
+        $$->setSrcLoc(@$);
+
+        $nested_arg = nullptr;
+    }
+  | UTOI LPAREN arg[nested_arg] RPAREN {
+        $$ = new AstIntrinsicFunctor(FunctorOp::UTOI,
+                std::unique_ptr<AstArgument>($nested_arg));
+        $$->setSrcLoc(@$);
+
+        $nested_arg = nullptr;
+    }
+  | UTOF LPAREN arg[nested_arg] RPAREN {
+        $$ = new AstIntrinsicFunctor(FunctorOp::UTOF,
+                std::unique_ptr<AstArgument>($nested_arg));
+        $$->setSrcLoc(@$);
+
+        $nested_arg = nullptr;
+    }
+  | FTOI LPAREN arg[nested_arg] RPAREN {
+        $$ = new AstIntrinsicFunctor(FunctorOp::FTOI,
+                std::unique_ptr<AstArgument>($nested_arg));
+        $$->setSrcLoc(@$);
+
+        $nested_arg = nullptr;
+    }
+  | FTOU LPAREN arg[nested_arg] RPAREN {
+        $$ = new AstIntrinsicFunctor(FunctorOp::FTOU,
                 std::unique_ptr<AstArgument>($nested_arg));
         $$->setSrcLoc(@$);
 
@@ -1470,6 +1523,10 @@ functor_type
             $$ = "N";
         } else if ($IDENT == "symbol") {
             $$ = "S";
+        } else if ($IDENT == "float") {
+            $$ = "F";
+        } else if ($IDENT == "unsigned") {
+            $$ = "U";
         } else {
             driver.error(@IDENT, "number or symbol identifier expected");
         }

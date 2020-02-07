@@ -1,5 +1,5 @@
 language: generic
-dist: xenial
+dist: bionic
 
 aliases:
   -  &linux_deps
@@ -10,10 +10,10 @@ aliases:
     - flex
     - libffi-dev
     - libncurses5-dev
-    - libopenmpi-dev
     - libtool
     - lsb-release
     - mcpp
+    - swig
   - &linuxgcc
     stage: Testing
     sudo: false
@@ -44,17 +44,14 @@ aliases:
     os: linux
     services: docker
     sudo: false
-  - &linuxmpi
-    <<: *docker
-    stage: Testing
-    script: ".travis/run_docker.sh"
   - &linuxpackage
     <<: *docker
     stage: Packaging
   - &osxgcc
     stage: Testing
     os: osx
-    osx_image: xcode8.3
+    osx_image: xcode11.2
+    compiler: gcc
     install: ". .travis/osx/install_withgcc.sh"
     before_script: ".travis/init_test.sh"
     script: ".travis/run_test.sh"
@@ -78,6 +75,7 @@ jobs:
   include:
 # Style check stage
   - stage: Style
+    name: "Style check"
     os: linux
     sudo: false
     addons:
@@ -85,86 +83,70 @@ jobs:
         packages:
         # The formatting may change with different versions of clang-format.
         # Check before modifying!
-        - clang-format-6.0
+        - clang-format-7
     script: ".travis/run_test_format.sh"
 
 # Testing stage (-j8,-c -j8)
   - <<: *linuxgcc
+    name: "Linux gcc non-eval"
     env:
-    - "gcc-setup"
     - *gcc_environment
-    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile,Provenance SOUFFLE_CONFS="-j8,-c -j8"
+    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile SOUFFLE_CONFS="-j8,-c -j8"
   - <<: *osxgcc
+    name: "OSX gcc non-eval"
     env:
-    - "gcc-setup"
-    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile,Provenance SOUFFLE_CONFS="-j8,-c -j8"
+    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile SOUFFLE_CONFS="-j8,-c -j8"
+
+# Testing stage with 64bit RamDomains (-j8,-c -j8)
+  - <<: *linuxgcc
+    before_script: ".travis/init_test_64bit.sh"
+    name: "Linux gcc 64-bit non-eval"
+    env:
+    - *gcc_environment
+    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile SOUFFLE_CONFS="-j8,-c -j8"
 
 # Testing stage for clang without OpenMP (,-c)
   - <<: *linuxclang
+    name: "Linux clang single threaded"
     env:
-    - "clang-setup"
     - *clang_environment
-    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile,Provenance SOUFFLE_CONFS=",-c"
+    - SOUFFLE_CATEGORY=Unit,Interface,Profile,Provenance SOUFFLE_CONFS=",-c"
   - <<: *osxclang
+    name: "OSX clang single threaded"
     env:
-    - "clang-setup"
-    - SOUFFLE_CATEGORY=Unit,Syntactic,Semantic,Interface,Profile,Provenance SOUFFLE_CONFS=",-c"
-
-# Testing stage with 64bit RamDomains (-j8,-c -j8, skipping the 32bit Semantic tests)
-  - <<: *linuxgcc
-    before_script: ".travis/init_test_64bit.sh"
-    env:
-    - "gcc-64bit-setup"
-    - *gcc_environment
-    - SOUFFLE_CATEGORY=Unit,Syntactic,Interface,Profile,Provenance SOUFFLE_CONFS="-j8,-c -j8"
-
-# Testing stage with engine option (-c -j8 -efile, FastEvaluation and select others)
-  - <<: *linuxgcc
-    env:
-    - "gcc-efile"
-    - *gcc_environment
-    - SOUFFLE_CATEGORY=FastEvaluation,Interface,Profile SOUFFLE_CONFS="-c -j8 -efile"
-
-# Testing stage with mpi (-c -j8 -empi, FastEvaluation and select others)
-  - <<: *linuxmpi
-    env:
-    - "gcc-empi"
-    - *gcc_environment
-    - SOUFFLE_DOCKER_BASE_IMAGE="souffle/ubuntu:bionic-base"
-    # TODO (lyndonhenry): should get this working with Interface, Profile, and Provenance (it does work already with Syntactic and Semantic)
-    - SOUFFLE_CATEGORY="Unit,FastEvaluation"
-    - SOUFFLE_CONFIGURE_OPTIONS="--enable-mpi"
-    - SOUFFLE_CONFS="-c -j8 -empi"
-    - SOUFFLE_MAKE_JOBS="2"
+    - SOUFFLE_CATEGORY=Unit,Interface,Profile,Provenance SOUFFLE_CONFS=",-c"
 
 # Testing stage (-j8,-c -j8)
   - <<: *linuxgcc
+    name: "Linux gcc fast evaluation tests"
+    before_script: ".travis/init_test_swig.sh"
     env:
-    - "gcc-evaluation"
     - *gcc_environment
-    - SOUFFLE_CATEGORY=Evaluation SOUFFLE_CONFS="-j8,-c -j8"
+    - SOUFFLE_CATEGORY=Swig,FastEvaluation SOUFFLE_CONFS="-j8,-c -j8"
 
 # Testing stage for clang without OpenMP (,-c)
   - <<: *linuxclang
+    name: "Linux clang fast evaluation tests"
+    before_script: ".travis/init_test_swig.sh"
     env:
-    - "clang-evaluation"
     - *clang_environment
-    - SOUFFLE_CATEGORY=Evaluation SOUFFLE_CONFS=",-c"
+    - SOUFFLE_CATEGORY=Swig,FastEvaluation SOUFFLE_CONFS=",-c"
   - <<: *osxclang
+    name: "OSX clang fast evaluation tests"
+    before_script: ".travis/init_test_swig.sh"
     env:
-    - "clang-evaluation"
-    - SOUFFLE_CATEGORY=Evaluation SOUFFLE_CONFS=",-c"
+    - SOUFFLE_CATEGORY=Swig,FastEvaluation SOUFFLE_CONFS=",-c"
 
 # Packaging stage
   # Test make install installs a working souffle.
   - <<: *linuxpackage
-    script: docker run -v `pwd`:/souffle ubuntu:xenial /bin/sh -c "cd /souffle && .travis/linux/install_debian_deps.sh && .travis/init_make_package.sh && .travis/test_make_install.sh"
-    env: "debian-make-install"
+    script: docker run -v `pwd`:/souffle ubuntu:bionic /bin/sh -c "cd /souffle && .travis/linux/install_debian_deps.sh && .travis/init_make_package.sh && .travis/test_make_install.sh"
+    name: "Debian make install"
   # Make the linux deb packages and if successful upload to github releases and bintray
   # All PRs go to bintray unstable, tagged releases to bintray stable
   - <<: *linuxpackage
-    script: docker run -v `pwd`:/souffle ubuntu:xenial /bin/sh -c "cd /souffle && .travis/linux/install_debian_deps.sh && .travis/init_make_package.sh && .travis/linux/make_package.sh"
-    env: "debian-package"
+    script: docker run -v `pwd`:/souffle ubuntu:bionic /bin/sh -c "cd /souffle && .travis/linux/install_debian_deps.sh && .travis/init_make_package.sh && .travis/linux/make_package.sh"
+    name: "Debian package"
     before_deploy:
       - .travis/bintray_json.sh debian
     # deploy to bintray if we're in the souffle-lang repo
@@ -199,7 +181,7 @@ jobs:
   # Try to build in a raw centos container to test that our dependencies are correct
   - <<: *linuxpackage
     script: docker run -v `pwd`:/souffle centos:7 /bin/sh -c "cd /souffle && .travis/linux/install_centos_deps.sh && .travis/linux/make_centos_package.sh"
-    env: "centos-package"
+    name: "CentOS package"
     before_deploy:
       - .travis/bintray_json.sh centos
     # deploy to bintray if we're in the souffle-lang repo
@@ -227,7 +209,7 @@ jobs:
   # Try to build in a raw fedora container to test that our dependencies are correct
   - <<: *linuxpackage
     script: docker run -v `pwd`:/souffle fedora:27 /bin/sh -c "cd /souffle && .travis/linux/install_fedora_deps.sh && .travis/linux/make_fedora_package.sh"
-    env: "fedora-package"
+    name: "Fedora package"
     before_deploy:
       - .travis/bintray_json.sh fedora
     # deploy to bintray if we're in the souffle-lang repo
@@ -251,7 +233,7 @@ jobs:
           tags: true
   # Make the OSX packages and if successful upload to github releases.
   - <<: *osxpackage
-    env: "osx-package"
+    name: "OSX package"
     before_deploy: .travis/bintray_json.sh osx
     deploy:
       - provider: releases
@@ -278,7 +260,7 @@ jobs:
           repo: souffle-lang/souffle
   # Generate doxygen html
   - stage: Packaging
-    env: "documenting"
+    name: "Documenting"
     os: linux
     sudo: false
     addons:

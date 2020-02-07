@@ -6,10 +6,13 @@
 set -e
 set -x
 
-# configure project
+JOBS=$(nproc || sysctl -n hw.ncpu || echo 2)
 
 # create configure files
 ./bootstrap
 ./configure --enable-64bit-domain
-make -j2
+make -j$JOBS
 
+
+set +e
+set +x

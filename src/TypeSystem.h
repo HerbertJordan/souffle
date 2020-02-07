@@ -73,7 +73,7 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& out, const Type* t) {
-        if (!t) {
+        if (t == nullptr) {
             return out << "-null-";
         }
         return t->print(out), out;
@@ -103,7 +103,7 @@ private:
     // only allow type environments to create instances
     friend class TypeEnvironment;
 
-    /** The base type -- may be symbol or numerical */
+    /** The base type -- may be symbol or numeric */
     const Type& baseType;
 
     PrimitiveType(const TypeEnvironment& environment, const AstTypeIdentifier& name, const Type& base)
@@ -328,6 +328,14 @@ public:
         return createType<PrimitiveType>(name, getNumberType());
     }
 
+    PrimitiveType& createFloatType(const identifier& name) {
+        return createType<PrimitiveType>(name, getFloatType());
+    }
+
+    PrimitiveType& createUnsignedType(const identifier& name) {
+        return createType<PrimitiveType>(name, getUnsignedType());
+    }
+
     PrimitiveType& createSymbolType(const identifier& name) {
         return createType<PrimitiveType>(name, getSymbolType());
     }
@@ -350,6 +358,14 @@ public:
 
     const Type& getNumberType() const {
         return getType("number");
+    }
+
+    const Type& getUnsignedType() const {
+        return getType("unsigned");
+    }
+
+    const Type& getFloatType() const {
+        return getType("float");
     }
 
     const Type& getSymbolType() const {
@@ -391,6 +407,67 @@ private:
 std::string getTypeQualifier(const Type& type);
 
 /**
+ * Determine if a type analysis' result is equivalent to the given RamTypeAttribute.
+ */
+template <typename T>  // T = Type or T = Typeset
+bool eqTypeRamTypeAttribute(const RamTypeAttribute ramType, const T& type) {
+    switch (ramType) {
+        case RamTypeAttribute::Signed:
+            return isNumberType(type);
+        case RamTypeAttribute::Unsigned:
+            return isUnsignedType(type);
+        case RamTypeAttribute::Float:
+            return isFloatType(type);
+        case RamTypeAttribute::Symbol:
+            return isSymbolType(type);
+        case RamTypeAttribute::Record:
+            return isRecordType(type);
+    }
+    return false;
+}
+
+/**
+ * Convert a type analysis' type/set of type to the the RamTypeAttribute
+ */
+template <typename T>  // T = Type or T = Typeset
+RamTypeAttribute getTypeAttribute(const T& type) {
+    RamTypeAttribute primitiveType;
+    if (isNumberType(type)) {
+        primitiveType = RamTypeAttribute::Signed;
+    } else if (isUnsignedType(type)) {
+        primitiveType = RamTypeAttribute::Unsigned;
+    } else if (isFloatType(type)) {
+        primitiveType = RamTypeAttribute::Float;
+    } else if (isRecordType(type)) {
+        primitiveType = RamTypeAttribute::Record;
+    } else if (isSymbolType(type)) {
+        primitiveType = RamTypeAttribute::Symbol;
+    } else {
+        std::cerr << "Unknown type class" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    return primitiveType;
+}
+
+/**
+ * Determines whether the type is numeric.
+ */
+template <typename T>  // T = Type or T = Typeset
+inline bool isNumericType(const T& type) {
+    return isFloatType(type) || isNumberType(type) || isUnsignedType(type);
+}
+
+/**
+ * Determines whether the given type is a float type.
+ */
+bool isFloatType(const Type& type);
+
+/**
+ * Determines whether all the types in the given set are float types.
+ */
+bool isFloatType(const TypeSet& s);
+
+/**
  * Determines whether the given type is a number type.
  */
 bool isNumberType(const Type& type);
@@ -399,6 +476,16 @@ bool isNumberType(const Type& type);
  * Determines whether all the types in the given set are number types.
  */
 bool isNumberType(const TypeSet& s);
+
+/**
+ * Determines whether the given type is a number type.
+ */
+bool isUnsignedType(const Type& type);
+
+/**
+ * Determines whether all the types in the given set are number types.
+ */
+bool isUnsignedType(const TypeSet& s);
 
 /**
  * Determines whether the given type is a symbol type.

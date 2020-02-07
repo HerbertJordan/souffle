@@ -29,4 +29,14 @@ int32_t goo(const char* s, int32_t n) {
 const char* hoo() {
     return "Hello world!\n";
 }
+
+const char* ioo(int32_t n) {
+    if (n < 0) {
+        return "NEG";
+    } else if (n == 0) {
+        return "ZERO";
+    } else {
+        return "POS";
+    }
+}
 }

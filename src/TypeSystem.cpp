@@ -15,6 +15,7 @@
  ***********************************************************************/
 
 #include "TypeSystem.h"
+#include "RamTypes.h"
 #include "Util.h"
 #include <cassert>
 
@@ -77,7 +78,9 @@ void TypeEnvironment::clear() {
 
     // re-initialize type environment
     createType<PredefinedType>("number");
+    createType<PredefinedType>("float");
     createType<PredefinedType>("symbol");
+    createType<PredefinedType>("unsigned");
 }
 
 bool TypeEnvironment::isType(const identifier& ident) const {
@@ -290,15 +293,26 @@ std::string getTypeQualifier(const Type& type) {
 
         std::string visitType(const Type& type) const override {
             std::string str;
-            if (isNumberType(type)) {
-                str = "i:" + toString(type.getName());
-            } else if (isSymbolType(type)) {
-                str = "s:" + toString(type.getName());
-            } else if (isRecordType(type)) {
-                str = "r:" + toString(type.getName());
-            } else {
-                assert(false && "unknown type class");
+
+            switch (getTypeAttribute(type)) {
+                case RamTypeAttribute::Signed:
+                    str.append("i");
+                    break;
+                case RamTypeAttribute::Unsigned:
+                    str.append("u");
+                    break;
+                case RamTypeAttribute::Float:
+                    str.append("f");
+                    break;
+                case RamTypeAttribute::Symbol:
+                    str.append("s");
+                    break;
+                case RamTypeAttribute::Record:
+                    str.append("r");
+                    break;
             }
+            str.append(":");
+            str.append(toString(type.getName()));
             seen[&type] = str;
             return str;
         }
@@ -307,12 +321,28 @@ std::string getTypeQualifier(const Type& type) {
     return visitor().visit(type);
 }
 
+bool isFloatType(const Type& type) {
+    return isOfRootType(type, type.getTypeEnvironment().getFloatType());
+}
+
+bool isFloatType(const TypeSet& s) {
+    return !s.empty() && !s.isAll() && all_of(s, (bool (*)(const Type&)) & isFloatType);
+}
+
 bool isNumberType(const Type& type) {
     return isOfRootType(type, type.getTypeEnvironment().getNumberType());
 }
 
 bool isNumberType(const TypeSet& s) {
     return !s.empty() && !s.isAll() && all_of(s, (bool (*)(const Type&)) & isNumberType);
+}
+
+bool isUnsignedType(const Type& type) {
+    return isOfRootType(type, type.getTypeEnvironment().getUnsignedType());
+}
+
+bool isUnsignedType(const TypeSet& s) {
+    return !s.empty() && !s.isAll() && all_of(s, (bool (*)(const Type&)) & isUnsignedType);
 }
 
 bool isSymbolType(const Type& type) {
@@ -324,7 +354,7 @@ bool isSymbolType(const TypeSet& s) {
 }
 
 bool isRecordType(const Type& type) {
-    return dynamic_cast<const RecordType*>(&type);
+    return dynamic_cast<const RecordType*>(&type) != nullptr;
 }
 
 bool isRecordType(const TypeSet& s) {

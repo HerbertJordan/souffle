@@ -16,6 +16,7 @@
 
 #include "RamTransforms.h"
 #include "BinaryConstraintOps.h"
+#include "RamComplexityAnalysis.h"
 #include "RamCondition.h"
 #include "RamExpression.h"
 #include "RamNode.h"
@@ -24,16 +25,17 @@
 #include "RamRelation.h"
 #include "RamStatement.h"
 #include "RamTypes.h"
+#include "RamUtils.h"
 #include "RamVisitor.h"
+#include <algorithm>
+#include <list>
 #include <utility>
 #include <vector>
 
 namespace souffle {
 
 bool ExpandFilterTransformer::expandFilters(RamProgram& program) {
-    // flag to determine whether the RAM program has changed
     bool changed = false;
-
     visitDepthFirst(program, [&](const RamQuery& query) {
         std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> filterRewriter =
                 [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
@@ -43,8 +45,7 @@ bool ExpandFilterTransformer::expandFilters(RamProgram& program) {
                 if (conditionList.size() > 1) {
                     changed = true;
                     std::vector<std::unique_ptr<RamFilter>> filters;
-                    for (auto iter = conditionList.rbegin(); iter != conditionList.rend(); ++iter) {
-                        auto& cond = *iter;
+                    for (auto& cond : conditionList) {
                         auto tempCond = cond->clone();
                         if (filters.empty()) {
                             filters.emplace_back(std::make_unique<RamFilter>(
@@ -67,10 +68,43 @@ bool ExpandFilterTransformer::expandFilters(RamProgram& program) {
     return changed;
 }
 
-bool CollapseFiltersTransformer::collapseFilters(RamProgram& program) {
-    // flag to determine whether the RAM program has changed
+bool ReorderConditionsTransformer::reorderConditions(RamProgram& program) {
     bool changed = false;
+    visitDepthFirst(program, [&](const RamQuery& query) {
+        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> filterRewriter =
+                [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
+            if (const RamFilter* filter = dynamic_cast<RamFilter*>(node.get())) {
+                const RamCondition* condition = &filter->getCondition();
+                std::vector<std::unique_ptr<RamCondition>> sortedConds,
+                        condList = toConjunctionList(condition);
+                for (auto& cond : condList) {
+                    sortedConds.emplace_back(cond->clone());
+                }
+                std::sort(sortedConds.begin(), sortedConds.end(),
+                        [&](std::unique_ptr<RamCondition>& a, std::unique_ptr<RamCondition>& b) {
+                            return rca->getComplexity(a.get()) < rca->getComplexity(b.get());
+                        });
 
+                if (!std::equal(sortedConds.begin(), sortedConds.end(), condList.begin(),
+                            [](std::unique_ptr<RamCondition>& a, std::unique_ptr<RamCondition>& b) {
+                                return *a == *b;
+                            })) {
+                    changed = true;
+                    node = std::make_unique<RamFilter>(
+                            std::unique_ptr<RamCondition>(toCondition(sortedConds)),
+                            std::unique_ptr<RamOperation>(filter->getOperation().clone()));
+                }
+            }
+            node->apply(makeLambdaRamMapper(filterRewriter));
+            return node;
+        };
+        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(filterRewriter));
+    });
+    return changed;
+}
+
+bool CollapseFiltersTransformer::collapseFilters(RamProgram& program) {
+    bool changed = false;
     visitDepthFirst(program, [&](const RamQuery& query) {
         std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> filterRewriter =
                 [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
@@ -79,13 +113,13 @@ bool CollapseFiltersTransformer::collapseFilters(RamProgram& program) {
                 bool canCollapse = false;
 
                 // storing conditions for collapsing
-                std::vector<const RamCondition*> conditions;
+                std::vector<std::unique_ptr<RamCondition>> conditions;
 
                 const RamFilter* prevFilter = filter;
-                conditions.emplace_back(&filter->getCondition());
+                conditions.emplace_back(filter->getCondition().clone());
                 while (auto* nextFilter = dynamic_cast<RamFilter*>(&prevFilter->getOperation())) {
                     canCollapse = true;
-                    conditions.emplace_back(&nextFilter->getCondition());
+                    conditions.emplace_back(nextFilter->getCondition().clone());
                     prevFilter = nextFilter;
                 }
 
@@ -105,8 +139,39 @@ bool CollapseFiltersTransformer::collapseFilters(RamProgram& program) {
     return changed;
 }
 
+bool EliminateDuplicatesTransformer::eliminateDuplicates(RamProgram& program) {
+    bool changed = false;
+    visitDepthFirst(program, [&](const RamQuery& query) {
+        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> filterRewriter =
+                [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
+            if (const RamFilter* filter = dynamic_cast<RamFilter*>(node.get())) {
+                const RamCondition* condition = &filter->getCondition();
+                std::vector<std::unique_ptr<RamCondition>> conds = toConjunctionList(condition);
+                bool eliminatedDuplicate = false;
+                for (std::size_t i = 0; i < conds.size(); i++) {
+                    for (std::size_t j = i + 1; j < conds.size(); j++) {
+                        if (*conds[i] == *conds[j]) {
+                            conds.erase(conds.begin() + j);
+                            i = -1;
+                            eliminatedDuplicate = true;
+                            break;
+                        }
+                    }
+                }
+                if (eliminatedDuplicate) {
+                    changed = true;
+                    node = std::make_unique<RamFilter>(std::unique_ptr<RamCondition>(toCondition(conds)),
+                            std::unique_ptr<RamOperation>(filter->getOperation().clone()));
+                }
+            }
+            node->apply(makeLambdaRamMapper(filterRewriter));
+            return node;
+        };
+        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(filterRewriter));
+    });
+    return changed;
+}
 bool HoistConditionsTransformer::hoistConditions(RamProgram& program) {
-    // flag to determine whether the RAM program has changed
     bool changed = false;
 
     // helper for collecting conditions from filter operations
@@ -117,17 +182,6 @@ bool HoistConditionsTransformer::hoistConditions(RamProgram& program) {
         } else {
             return std::make_unique<RamConjunction>(std::move(condition), std::unique_ptr<RamCondition>(c));
         }
-    };
-
-    // insert a new filter
-    auto insertFilter = [](RamOperation* op, std::unique_ptr<RamCondition>& condition) {
-        op->apply(makeLambdaRamMapper([&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
-            if (nullptr != dynamic_cast<RamOperation*>(node.get())) {
-                return std::make_unique<RamFilter>(std::move(condition),
-                        std::unique_ptr<RamOperation>(dynamic_cast<RamOperation*>(node.release())));
-            }
-            return node;
-        }));
     };
 
     // hoist conditions to the most outer scope if they
@@ -150,11 +204,14 @@ bool HoistConditionsTransformer::hoistConditions(RamProgram& program) {
             node->apply(makeLambdaRamMapper(filterRewriter));
             return node;
         };
-        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(filterRewriter));
+        auto* mQuery = const_cast<RamQuery*>(&query);
+        mQuery->apply(makeLambdaRamMapper(filterRewriter));
         if (newCondition != nullptr) {
             // insert new filter operation at outer-most level of the query
             changed = true;
-            insertFilter((RamOperation*)&query, newCondition);
+            auto* nestedOp = const_cast<RamOperation*>(&mQuery->getOperation());
+            mQuery->rewrite(nestedOp, std::make_unique<RamFilter>(std::move(newCondition),
+                                              std::unique_ptr<RamOperation>(nestedOp->clone())));
         }
     });
 
@@ -177,11 +234,14 @@ bool HoistConditionsTransformer::hoistConditions(RamProgram& program) {
             node->apply(makeLambdaRamMapper(filterRewriter));
             return node;
         };
-        const_cast<RamTupleOperation*>(&search)->apply(makeLambdaRamMapper(filterRewriter));
+        auto* tupleOp = const_cast<RamTupleOperation*>(&search);
+        tupleOp->apply(makeLambdaRamMapper(filterRewriter));
         if (newCondition != nullptr) {
             // insert new filter operation after the search operation
             changed = true;
-            insertFilter((RamOperation*)&search, newCondition);
+            tupleOp->rewrite(&tupleOp->getOperation(),
+                    std::make_unique<RamFilter>(std::move(newCondition),
+                            std::unique_ptr<RamOperation>(tupleOp->getOperation().clone())));
         }
     });
     return changed;
@@ -340,9 +400,11 @@ bool MakeIndexTransformer::makeIndex(RamProgram& program) {
         std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> scanRewriter =
                 [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
             if (const RamScan* scan = dynamic_cast<RamScan*>(node.get())) {
-                if (std::unique_ptr<RamOperation> op = rewriteScan(scan)) {
-                    changed = true;
-                    node = std::move(op);
+                if (scan->getRelation().getRepresentation() != RelationRepresentation::INFO) {
+                    if (std::unique_ptr<RamOperation> op = rewriteScan(scan)) {
+                        changed = true;
+                        node = std::move(op);
+                    }
                 }
             } else if (const RamIndexScan* iscan = dynamic_cast<RamIndexScan*>(node.get())) {
                 if (std::unique_ptr<RamOperation> op = rewriteIndexScan(iscan)) {
@@ -359,6 +421,31 @@ bool MakeIndexTransformer::makeIndex(RamProgram& program) {
             return node;
         };
         const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(scanRewriter));
+    });
+    return changed;
+}
+
+bool ReorderFilterBreak::reorderFilterBreak(RamProgram& program) {
+    bool changed = false;
+    visitDepthFirst(program, [&](const RamQuery& query) {
+        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> filterRewriter =
+                [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
+            // find filter-break nesting
+            if (const RamFilter* filter = dynamic_cast<RamFilter*>(node.get())) {
+                if (const RamBreak* br = dynamic_cast<RamBreak*>(&filter->getOperation())) {
+                    changed = true;
+                    // convert to break-filter nesting
+                    node = std::make_unique<RamBreak>(
+                            std::unique_ptr<RamCondition>(br->getCondition().clone()),
+                            std::make_unique<RamFilter>(
+                                    std::unique_ptr<RamCondition>(filter->getCondition().clone()),
+                                    std::unique_ptr<RamOperation>(br->getOperation().clone())));
+                }
+            }
+            node->apply(makeLambdaRamMapper(filterRewriter));
+            return node;
+        };
+        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(filterRewriter));
     });
     return changed;
 }
@@ -522,9 +609,7 @@ bool ChoiceConversionTransformer::convertScans(RamProgram& program) {
 }
 
 bool TupleIdTransformer::reorderOperations(RamProgram& program) {
-    // flag to determine whether the RAM program has changed
     bool changed = false;
-
     visitDepthFirst(program, [&](const RamQuery& query) {
         // Maps old tupleIds to new tupleIds
         std::map<int, int> reorder;
@@ -558,208 +643,106 @@ bool TupleIdTransformer::reorderOperations(RamProgram& program) {
 }
 
 bool HoistAggregateTransformer::hoistAggregate(RamProgram& program) {
-    // flag to determine whether the RAM program has changed
     bool changed = false;
 
-    // hoist aggregate if doesn't depend on anything
+    // There are two cases: aggregates that have no data-dependencies on
+    // other RAM operations, and aggregates that have data-dependencies.
+    // A rewriter has two tasks: (1) identify a single aggregate that
+    // can be hoisted and (2) insert it at the outermost level.
+    // We assume all RamOperations are renumbered for this transformation.
+
+    // Hoist a single aggregate to an outer scope that is data-independent.
     visitDepthFirst(program, [&](const RamQuery& query) {
-        int currLevel = -1;
-        int oldLevel = -1;
-        bool hoist = false;
-        bool newIndex = false;
-
-        // Fields for new aggregate
-        AggregateFunction newFun;
-        const RamRelation* newRef;
-        RamExpression* newExp;
-        RamCondition* newCond;
-        std::vector<RamExpression*> newPattern;
-
-        // Tracking aggregates seen to determine whether to
-        // hoist or not
-        std::vector<int> aggIds;
-
-        // Removing an aggregate that can be hoisted if it exists
-        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> aggRemover =
+        std::unique_ptr<RamNestedOperation> newAgg;
+        bool priorTupleOp = false;
+        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> aggRewriter =
                 [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
-            // Checking that there exists an aggregate to hoist
-            // If so, remove the aggregate from the loop nest
-            if (const RamAggregate* agg = dynamic_cast<RamAggregate*>(node.get())) {
-                aggIds.push_back(agg->getTupleId());
-                // assuming that RamTupleOperations have tupleIds 0, 1, 2, ...
-                if (!hoist && rla->getLevel(agg) < agg->getTupleId() - 1) {
-                    // If all tuple ops between the rla->getLevel(agg) and agg
-                    // are aggregates, then we do not transform
-                    bool allAggragates = true;
-                    for (int i = rla->getLevel(agg) + 1; i <= agg->getTupleId(); i++) {
-                        if (!(std::find(aggIds.begin(), aggIds.end(), i) != aggIds.end())) {
-                            currLevel = i - 1;
-                            allAggragates = false;
-                            break;
-                        }
-                    }
-                    if (!allAggragates) {
-                        hoist = true;
-                        changed = true;
-                        oldLevel = agg->getTupleId();
-
-                        // Copying fields
-                        newFun = agg->getFunction();
-                        newRef = &agg->getRelation();
-                        newExp = dynamic_cast<RamExpression*>(agg->getExpression().clone());
-                        newCond = dynamic_cast<RamCondition*>(agg->getCondition().clone());
-
-                        node->apply(makeLambdaRamMapper(aggRemover));
-                        return std::unique_ptr<RamOperation>(agg->getOperation().clone());
-                    }
+            if (nullptr != dynamic_cast<RamAggregate*>(node.get())) {
+                auto* tupleOp = dynamic_cast<RamTupleOperation*>(node.get());
+                assert(tupleOp != nullptr && "aggregate conversion to tuple operation failed");
+                if (rla->getLevel(tupleOp) == -1 && !priorTupleOp) {
+                    changed = true;
+                    newAgg = std::unique_ptr<RamNestedOperation>(
+                            dynamic_cast<RamNestedOperation*>(tupleOp->clone()));
+                    assert(newAgg != nullptr && "failed to make a clone");
+                    return std::unique_ptr<RamOperation>(tupleOp->getOperation().clone());
                 }
-            } else if (const RamIndexAggregate* agg = dynamic_cast<RamIndexAggregate*>(node.get())) {
-                aggIds.push_back(agg->getTupleId());
-                if (!hoist && rla->getLevel(agg) < agg->getTupleId() - 1) {
-                    // If all tuple ops above agg in the loop nest are also aggregates
-                    // then we do not transform
-                    bool allAggragates = true;
-                    for (int i = rla->getLevel(agg) + 1; i <= agg->getTupleId(); i++) {
-                        if (!(std::find(aggIds.begin(), aggIds.end(), i) != aggIds.end())) {
-                            currLevel = i - 1;
-                            allAggragates = false;
-                            break;
-                        }
-                    }
-                    if (!allAggragates) {
-                        hoist = true;
-                        changed = true;
-                        newIndex = true;
-                        oldLevel = agg->getTupleId();
-
-                        // Copying fields
-                        newFun = agg->getFunction();
-                        newRef = &agg->getRelation();
-                        newExp = dynamic_cast<RamExpression*>(agg->getExpression().clone());
-                        newCond = dynamic_cast<RamCondition*>(agg->getCondition().clone());
-                        newPattern = agg->getRangePattern();
-                    }
-                }
+            } else if (nullptr != dynamic_cast<RamTupleOperation*>(node.get())) {
+                // tuple operation that is a non-aggregate
+                priorTupleOp = true;
             }
-            node->apply(makeLambdaRamMapper(aggRemover));
+            node->apply(makeLambdaRamMapper(aggRewriter));
             return node;
         };
-
-        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(aggRemover));
-
-        bool added = false;
-
-        // Adding back the aggregate if one was removed before
-        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> aggAdder =
-                [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
-            if (auto* search = dynamic_cast<RamTupleOperation*>(node.get())) {
-                if (!added && search->getTupleId() == currLevel - 1) {
-                    added = true;
-                    auto* op = dynamic_cast<RamNestedOperation*>(search);
-                    // Finding the operation right before the RamTupleOperation
-                    // with tupleId = aggregate's tupleId - 1
-                    while (dynamic_cast<RamTupleOperation*>(&op->getOperation()) != nullptr) {
-                        op = dynamic_cast<RamNestedOperation*>(&op->getOperation());
-                    }
-
-                    if (newIndex) {
-                        // RamIndexAggregate
-                        std::vector<std::unique_ptr<RamExpression>> queryPattern;
-                        for (const RamExpression* cur : newPattern) {
-                            if (nullptr != cur) {
-                                queryPattern.push_back(std::unique_ptr<RamExpression>(cur->clone()));
-                            } else {
-                                queryPattern.push_back(nullptr);
-                            }
-                        }
-
-                        node->apply(makeLambdaRamMapper(aggAdder));
-
-                        return std::make_unique<RamIndexAggregate>(
-                                std::unique_ptr<RamOperation>(op->getOperation().clone()), newFun,
-                                std::make_unique<RamRelationReference>(newRef),
-                                std::unique_ptr<RamExpression>(newExp),
-                                std::unique_ptr<RamCondition>(newCond), std::move(queryPattern), oldLevel);
-
-                    } else {
-                        // RamAggregate
-                        node->apply(makeLambdaRamMapper(aggAdder));
-
-                        return std::make_unique<RamAggregate>(
-                                std::unique_ptr<RamOperation>(op->getOperation().clone()), newFun,
-                                std::make_unique<RamRelationReference>(newRef),
-                                std::unique_ptr<RamExpression>(newExp),
-                                std::unique_ptr<RamCondition>(newCond), oldLevel);
-                    }
-                }
-            }
-            node->apply(makeLambdaRamMapper(aggAdder));
-            return node;
-        };
-
-        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> aggTopAdder =
-                [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
-            if (nullptr != dynamic_cast<RamOperation*>(node.get())) {
-                if (newIndex) {
-                    // RamIndexAggregate
-                    std::vector<std::unique_ptr<RamExpression>> queryPattern;
-                    for (const RamExpression* cur : newPattern) {
-                        if (nullptr != cur) {
-                            queryPattern.push_back(std::unique_ptr<RamExpression>(cur->clone()));
-                        } else {
-                            queryPattern.push_back(nullptr);
-                        }
-                    }
-
-                    return std::make_unique<RamIndexAggregate>(
-                            std::unique_ptr<RamOperation>(dynamic_cast<RamOperation*>(node.release())),
-                            newFun, std::make_unique<RamRelationReference>(newRef),
-                            std::unique_ptr<RamExpression>(newExp), std::unique_ptr<RamCondition>(newCond),
-                            std::move(queryPattern), oldLevel);
-                } else {
-                    // RamAggregate
-                    return std::make_unique<RamAggregate>(
-                            std::unique_ptr<RamOperation>(dynamic_cast<RamOperation*>(node.release())),
-                            newFun, std::make_unique<RamRelationReference>(newRef),
-                            std::unique_ptr<RamExpression>(newExp), std::unique_ptr<RamCondition>(newCond),
-                            oldLevel);
-                }
-            }
-            return node;
-        };
-
-        if (hoist) {
-            if (currLevel < 1) {
-                // insert at the top of the loop nest
-                const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(aggTopAdder));
-            } else {
-                const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(aggAdder));
-            }
+        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(aggRewriter));
+        if (newAgg != nullptr) {
+            newAgg->rewrite(
+                    &newAgg->getOperation(), std::unique_ptr<RamOperation>(query.getOperation().clone()));
+            const_cast<RamQuery*>(&query)->rewrite(&query.getOperation(), std::move(newAgg));
         }
     });
 
+    // hoist a single aggregate to an outer scope that is data-dependent on a prior operation.
+    visitDepthFirst(program, [&](const RamQuery& query) {
+        int newLevel = -1;
+        std::unique_ptr<RamNestedOperation> newAgg;
+        int priorOpLevel = -1;
+
+        std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> aggRewriter =
+                [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
+            if (nullptr != dynamic_cast<RamAbstractAggregate*>(node.get())) {
+                auto* tupleOp = dynamic_cast<RamTupleOperation*>(node.get());
+                assert(tupleOp != nullptr && "aggregate conversion to nested operation failed");
+                int dataDepLevel = rla->getLevel(tupleOp);
+                if (dataDepLevel != -1 && dataDepLevel < tupleOp->getTupleId() - 1) {
+                    // If all tuple ops between the data-dependence level and agg
+                    // are aggregates, then we do not hoist, i.e., we would
+                    // continuously swap their positions.
+                    if (dataDepLevel != priorOpLevel) {
+                        changed = true;
+                        newLevel = dataDepLevel;
+                        newAgg = std::unique_ptr<RamNestedOperation>(
+                                dynamic_cast<RamNestedOperation*>(tupleOp->clone()));
+                        assert(newAgg != nullptr && "failed to make a clone");
+                        return std::unique_ptr<RamOperation>(tupleOp->getOperation().clone());
+                    }
+                }
+            } else if (const RamTupleOperation* tupleOp = dynamic_cast<RamTupleOperation*>(node.get())) {
+                priorOpLevel = tupleOp->getTupleId();
+            }
+            node->apply(makeLambdaRamMapper(aggRewriter));
+            if (auto* search = dynamic_cast<RamTupleOperation*>(node.get())) {
+                if (newAgg != nullptr && search->getTupleId() == newLevel) {
+                    newAgg->rewrite(&newAgg->getOperation(),
+                            std::unique_ptr<RamOperation>(search->getOperation().clone()));
+                    search->rewrite(&search->getOperation(), std::move(newAgg));
+                }
+            }
+            return node;
+        };
+        const_cast<RamQuery*>(&query)->apply(makeLambdaRamMapper(aggRewriter));
+    });
     return changed;
-}
+}  // namespace souffle
 
 bool ParallelTransformer::parallelizeOperations(RamProgram& program) {
-    // flag to determine whether the RAM program has changed
     bool changed = false;
 
     // parallelize the most outer loop only
     // most outer loops can be scan/choice/indexScan/indexChoice
-    //
-    // TODO (b-scholz): renumbering may be necessary since some operations
-    // may have reduced a loop to a filter operation.
     visitDepthFirst(program, [&](const RamQuery& query) {
         std::function<std::unique_ptr<RamNode>(std::unique_ptr<RamNode>)> parallelRewriter =
                 [&](std::unique_ptr<RamNode> node) -> std::unique_ptr<RamNode> {
             if (const RamScan* scan = dynamic_cast<RamScan*>(node.get())) {
-                if (scan->getTupleId() == 0) {
-                    changed = true;
-                    return std::make_unique<RamParallelScan>(
-                            std::make_unique<RamRelationReference>(&scan->getRelation()), scan->getTupleId(),
-                            std::unique_ptr<RamOperation>(scan->getOperation().clone()),
-                            scan->getProfileText());
+                if (scan->getTupleId() == 0 && scan->getRelation().getArity() > 0) {
+                    if (nullptr == dynamic_cast<RamProject*>(&scan->getOperation())) {
+                        changed = true;
+                        return std::make_unique<RamParallelScan>(
+                                std::make_unique<RamRelationReference>(&scan->getRelation()),
+                                scan->getTupleId(),
+                                std::unique_ptr<RamOperation>(scan->getOperation().clone()),
+                                scan->getProfileText());
+                    }
                 }
             } else if (const RamChoice* choice = dynamic_cast<RamChoice*>(node.get())) {
                 if (choice->getTupleId() == 0) {

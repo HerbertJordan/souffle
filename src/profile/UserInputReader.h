@@ -56,16 +56,24 @@ public:
     void readchar() {
         char buf = 0;
         struct termios old = {};
-        if (tcgetattr(0, &old) < 0) perror("tcsetattr()");
+        if (tcgetattr(0, &old) < 0) {
+            perror("tcsetattr()");
+        }
         old.c_lflag &= ~ICANON;
         old.c_lflag &= ~ECHO;
         old.c_cc[VMIN] = 1;
         old.c_cc[VTIME] = 0;
-        if (tcsetattr(0, TCSANOW, &old) < 0) perror("tcsetattr ICANON");
-        if (::read(0, &buf, 1) < 0) perror("read()");
+        if (tcsetattr(0, TCSANOW, &old) < 0) {
+            perror("tcsetattr ICANON");
+        }
+        if (::read(0, &buf, 1) < 0) {
+            perror("read()");
+        }
         old.c_lflag |= ICANON;
         old.c_lflag |= ECHO;
-        if (tcsetattr(0, TCSADRAIN, &old) < 0) perror("tcsetattr ~ICANON");
+        if (tcsetattr(0, TCSADRAIN, &old) < 0) {
+            perror("tcsetattr ~ICANON");
+        }
 
         current_char = buf;
     }
@@ -194,7 +202,7 @@ public:
     void addHistory(std::string hist) {
         if (history.size() > 0) {
             // only add to history if the last command wasn't the same
-            if (hist.compare(history.at(history.size() - 1)) == 0) {
+            if (hist == history.at(history.size() - 1)) {
                 return;
             }
         }

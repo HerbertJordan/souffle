@@ -56,10 +56,10 @@ void TypeEnvironmentAnalysis::updateTypeEnvironment(const AstProgram& program) {
             } else {
                 env.createSymbolType(cur->getName());
             }
-        } else if (dynamic_cast<const AstUnionType*>(cur)) {
+        } else if (dynamic_cast<const AstUnionType*>(cur) != nullptr) {
             // initialize the union
             env.createUnionType(cur->getName());
-        } else if (dynamic_cast<const AstRecordType*>(cur)) {
+        } else if (dynamic_cast<const AstRecordType*>(cur) != nullptr) {
             // initialize the record
             env.createRecordType(cur->getName());
         } else {
@@ -73,12 +73,12 @@ void TypeEnvironmentAnalysis::updateTypeEnvironment(const AstProgram& program) {
         Type* type = env.getModifiableType(cur->getName());
         assert(type && "It should be there!");
 
-        if (dynamic_cast<const AstPrimitiveType*>(cur)) {
+        if (dynamic_cast<const AstPrimitiveType*>(cur) != nullptr) {
             // nothing to do here
         } else if (auto* t = dynamic_cast<const AstUnionType*>(cur)) {
             // get type as union type
             auto* ut = dynamic_cast<UnionType*>(type);
-            if (!ut) {
+            if (ut == nullptr) {
                 continue;  // support faulty input
             }
 
@@ -91,7 +91,7 @@ void TypeEnvironmentAnalysis::updateTypeEnvironment(const AstProgram& program) {
         } else if (auto* t = dynamic_cast<const AstRecordType*>(cur)) {
             // get type as record type
             auto* rt = dynamic_cast<RecordType*>(type);
-            if (!rt) {
+            if (rt == nullptr) {
                 continue;  // support faulty input
             }
 

@@ -2,6 +2,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.6)
 PROJECT(souffle)
 SET(CMAKE_CXX_STANDARD 11)
 ADD_EXECUTABLE(souffle
+        ./src/swig/SwigInterface.h
+        ./src/swig/SwigInterface.cpp
+        ./src/swig/SwigInterface.i
         ./src/CompiledIndexUtils.h
         ./src/ProfileEvent.h
         ./src/CompiledRecord.h
@@ -50,7 +53,6 @@ ADD_EXECUTABLE(souffle
         ./src/InterpreterRelation.h
         ./src/InterpreterIndex.h
         ./src/SignalHandler.h
-        ./src/StringPool.h
         ./src/WriteStreamSQLite.h
         ./src/AstTranslator.h
         ./src/ReadStreamCSV.h
@@ -89,7 +91,6 @@ ADD_EXECUTABLE(souffle
         ./src/Interpreter.h
         ./src/RamTransformer.h
         ./src/RamVisitor.h
-        ./src/Mpi.h
         ./src/EventProcessor.h
         ./src/InterpreterContext.h
         ./src/AstTranslationUnit.h
@@ -159,8 +160,6 @@ ADD_EXECUTABLE(souffle
         ./src/AstTransforms.cpp
         ./src/AstPragma.cpp
         ./src/RamOperation.cpp
-        ./src/souffle2bdd.cpp
-        ./src/souffle2lb.cpp
         ./src/TypeSystem.cpp
         ./src/AstComponentChecker.cpp
         ./src/AstParserUtils.cpp

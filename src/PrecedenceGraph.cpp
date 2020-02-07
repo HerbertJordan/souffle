@@ -57,14 +57,14 @@ void PrecedenceGraph::print(std::ostream& os) const {
     os << "digraph {\n";
     /* Print node of dependence graph */
     for (const AstRelation* rel : backingGraph.vertices()) {
-        if (rel) {
+        if (rel != nullptr) {
             os << "\t\"" << rel->getName() << "\" [label = \"" << rel->getName() << "\"];\n";
         }
     }
     for (const AstRelation* rel : backingGraph.vertices()) {
-        if (rel) {
+        if (rel != nullptr) {
             for (const AstRelation* adjRel : backingGraph.successors(rel)) {
-                if (adjRel) {
+                if (adjRel != nullptr) {
                     os << "\t\"" << rel->getName() << "\" -> \"" << adjRel->getName() << "\";\n";
                 }
             }
@@ -99,7 +99,7 @@ void RedundantRelations::run(const AstTranslationUnit& translationUnit) {
         /* Find all predecessors of u and add them to the worklist
             if they are not in the set notRedundant */
         for (const AstRelation* predecessor : precedenceGraph->graph().predecessors(u)) {
-            if (!notRedundant.count(predecessor)) {
+            if (notRedundant.count(predecessor) == 0u) {
                 work.insert(predecessor);
             }
         }
@@ -108,7 +108,7 @@ void RedundantRelations::run(const AstTranslationUnit& translationUnit) {
     /* All remaining relations are redundant. */
     redundantRelations.clear();
     for (const AstRelation* r : relations) {
-        if (!notRedundant.count(r)) {
+        if (notRedundant.count(r) == 0u) {
             redundantRelations.insert(r);
         }
     }
@@ -156,7 +156,7 @@ bool RecursiveClauses::computeIsRecursive(
         worklist.pop_back();
 
         // skip null pointers (errors in the input code)
-        if (!cur) {
+        if (cur == nullptr) {
             continue;
         }
 

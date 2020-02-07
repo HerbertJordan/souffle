@@ -53,7 +53,7 @@ const AstComponent* AstComponentChecker::checkComponentNameReference(ErrorReport
     }
 
     const AstComponent* c = componentLookup.getComponent(enclosingComponent, name, binding);
-    if (!c) {
+    if (c == nullptr) {
         report.addError("Referencing undefined component " + name, loc);
         return nullptr;
     }
@@ -67,7 +67,7 @@ void AstComponentChecker::checkComponentReference(ErrorReport& report, const Ast
     // check whether targeted component exists
     const AstComponent* c = checkComponentNameReference(
             report, enclosingComponent, componentLookup, type.getName(), loc, binding);
-    if (!c) {
+    if (c == nullptr) {
         return;
     }
 
@@ -127,7 +127,7 @@ void AstComponentChecker::checkComponent(ErrorReport& report, const AstComponent
     std::function<void(const AstComponent&)> collectParents = [&](const AstComponent& cur) {
         for (const auto& base : cur.getBaseComponents()) {
             auto c = componentLookup.getComponent(enclosingComponent, base->getName(), binding);
-            if (!c) {
+            if (c == nullptr) {
                 continue;
             }
             if (parents.insert(c).second) {
@@ -139,7 +139,7 @@ void AstComponentChecker::checkComponent(ErrorReport& report, const AstComponent
 
     // check overrides
     for (const AstRelation* relation : component.getRelations()) {
-        if (component.getOverridden().count(relation->getName().getNames()[0])) {
+        if (component.getOverridden().count(relation->getName().getNames()[0]) != 0u) {
             report.addError("Override of non-inherited relation " + relation->getName().getNames()[0] +
                                     " in component " + component.getComponentType()->getName(),
                     component.getSrcLoc());
@@ -147,7 +147,7 @@ void AstComponentChecker::checkComponent(ErrorReport& report, const AstComponent
     }
     for (const AstComponent* parent : parents) {
         for (const AstRelation* relation : parent->getRelations()) {
-            if (component.getOverridden().count(relation->getName().getNames()[0]) &&
+            if ((component.getOverridden().count(relation->getName().getNames()[0]) != 0u) &&
                     !relation->isOverridable()) {
                 report.addError("Override of non-overridable relation " + relation->getName().getNames()[0] +
                                         " in component " + component.getComponentType()->getName(),
@@ -196,14 +196,14 @@ void AstComponentChecker::checkComponentNamespaces(ErrorReport& report, const As
     // Find all names and report redeclarations as we go.
     for (const auto& type : program.getTypes()) {
         const std::string name = toString(type->getName());
-        if (!names.count(name)) {
+        if (names.count(name) == 0u) {
             names[name] = type->getSrcLoc();
         }
     }
 
     for (const auto& rel : program.getRelations()) {
         const std::string name = toString(rel->getName());
-        if (!names.count(name)) {
+        if (names.count(name) == 0u) {
             names[name] = rel->getSrcLoc();
         }
     }
@@ -211,7 +211,7 @@ void AstComponentChecker::checkComponentNamespaces(ErrorReport& report, const As
     // Note: Nested component and instance names are not obtained.
     for (const auto& comp : program.getComponents()) {
         const std::string name = toString(comp->getComponentType()->getName());
-        if (names.count(name)) {
+        if (names.count(name) != 0u) {
             report.addError("Name clash on component " + name, comp->getSrcLoc());
         } else {
             names[name] = comp->getSrcLoc();
@@ -220,7 +220,7 @@ void AstComponentChecker::checkComponentNamespaces(ErrorReport& report, const As
 
     for (const auto& inst : program.getComponentInstantiations()) {
         const std::string name = toString(inst->getInstanceName());
-        if (names.count(name)) {
+        if (names.count(name) != 0u) {
             report.addError("Name clash on instantiation " + name, inst->getSrcLoc());
         } else {
             names[name] = inst->getSrcLoc();

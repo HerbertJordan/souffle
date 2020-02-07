@@ -7,6 +7,7 @@
  */
 
 #include "SynthesiserRelation.h"
+#include "Global.h"
 #include "RelationRepresentation.h"
 #include "Util.h"
 #include <algorithm>
@@ -32,6 +33,8 @@ std::unique_ptr<SynthesiserRelation> SynthesiserRelation::getSynthesiserRelation
         rel = new SynthesiserBrieRelation(ramRel, indexSet, isProvenance);
     } else if (ramRel.getRepresentation() == RelationRepresentation::EQREL) {
         rel = new SynthesiserEqrelRelation(ramRel, indexSet, isProvenance);
+    } else if (ramRel.getRepresentation() == RelationRepresentation::INFO) {
+        rel = new SynthesiserInfoRelation(ramRel, indexSet, isProvenance);
     } else {
         // Handle the data structure command line flag
         if (ramRel.getArity() > 6) {
@@ -47,6 +50,24 @@ std::unique_ptr<SynthesiserRelation> SynthesiserRelation::getSynthesiserRelation
     rel->computeIndices();
 
     return std::unique_ptr<SynthesiserRelation>(rel);
+}
+
+// -------- Info Relation --------
+
+/** Generate index set for a info relation, which should be empty */
+void SynthesiserInfoRelation::computeIndices() {
+    computedIndices = {};
+}
+
+/** Generate type name of a info relation */
+std::string SynthesiserInfoRelation::getTypeName() {
+    return "t_info<" + std::to_string(getArity()) + ">";
+}
+
+/** Generate type struct of a info relation, which is empty,
+ * the actual implementation is in CompiledSouffle.h */
+void SynthesiserInfoRelation::generateTypeStruct(std::ostream& out) {
+    return;
 }
 
 // -------- Nullary Relation --------
@@ -81,48 +102,97 @@ void SynthesiserDirectRelation::computeIndices() {
         inds.push_back(fullInd);
     }
 
+    size_t index_nr = 0;
     // expand all search orders to be full
     for (auto& ind : inds) {
-        if (ind.size() < getArity()) {
-            // use a set as a cache for fast lookup
-            std::set<int> curIndexElems(ind.begin(), ind.end());
+        // use a set as a cache for fast lookup
+        std::set<int> curIndexElems(ind.begin(), ind.end());
 
-            // If this relation is used with provenance,
-            // we must expand all search orders to be full indices,
-            // since weak/strong comparators and updaters need this,
-            // and also add provenance annotations to the indices
-            if (isProvenance) {
-                // expand index to be full
-                for (size_t i = 0; i < getArity() - 2; i++) {
+        // If this relation is used with provenance,
+        // we must expand all search orders to be full indices,
+        // since weak/strong comparators and updaters need this,
+        // and also add provenance annotations to the indices
+        if (isProvenance) {
+            // expand index to be full
+            for (size_t i = 0; i < getArity() - relation.getAuxiliaryArity(); i++) {
+                if (curIndexElems.find(i) == curIndexElems.end()) {
+                    ind.push_back(i);
+                }
+            }
+
+            if (Global::config().get("provenance") == "subtreeHeights") {
+                // TODO (sarah): assumption index is used exclusively for provenance in case a height
+                // parameter occurs in order of columns before regular columns (at least only in this case it
+                // needs to be copied) -- verify this!!
+
+                auto firstProvenanceColumn = (getArity() - relation.getAuxiliaryArity());
+
+                // position of last non provenance column
+                auto nonProv = std::find_if(ind.rbegin(), ind.rend(),
+                        [firstProvenanceColumn](size_t i) { return i < firstProvenanceColumn; });
+                auto indNonProv = std::distance(nonProv, ind.rend());
+
+                // position of first height column
+                auto prov = std::find_if(ind.begin(), ind.end(),
+                        [firstProvenanceColumn](size_t i) { return i >= firstProvenanceColumn + 1; });
+                auto indProv = std::distance(ind.begin(), prov);
+
+                if (indNonProv > indProv) {
+                    provenanceIndexNumbers.insert(index_nr);
+                } else {
+                    // index was not added for provenance and can therefore be used as master index
+                    masterIndex = index_nr;
+                }
+
+                // add provenance annotations to the index but in reverse order
+                // add height columns if not already contained
+                for (size_t i = getArity() - relation.getAuxiliaryArity() + 1; i < getArity(); i++) {
                     if (curIndexElems.find(i) == curIndexElems.end()) {
                         ind.push_back(i);
                     }
                 }
 
+                // remove rule annotation if already in the index order
+                if (curIndexElems.find(getArity() - relation.getAuxiliaryArity()) != curIndexElems.end()) {
+                    ind.erase(std::find(ind.begin(), ind.end(), getArity() - relation.getAuxiliaryArity()));
+                }
+                // add rule as last parameter
+                ind.push_back(getArity() - relation.getAuxiliaryArity());
+            } else {
                 // remove any provenance annotations already in the index order
-                if (curIndexElems.find(getArity() - 1) != curIndexElems.end()) {
-                    ind.erase(std::find(ind.begin(), ind.end(), getArity() - 1));
+                if (curIndexElems.find(getArity() - relation.getAuxiliaryArity() + 1) !=
+                        curIndexElems.end()) {
+                    ind.erase(
+                            std::find(ind.begin(), ind.end(), getArity() - relation.getAuxiliaryArity() + 1));
                 }
 
-                if (curIndexElems.find(getArity() - 2) != curIndexElems.end()) {
-                    ind.erase(std::find(ind.begin(), ind.end(), getArity() - 2));
+                if (curIndexElems.find(getArity() - relation.getAuxiliaryArity()) != curIndexElems.end()) {
+                    ind.erase(std::find(ind.begin(), ind.end(), getArity() - relation.getAuxiliaryArity()));
                 }
 
                 // add provenance annotations to the index, but in reverse order
-                ind.push_back(getArity() - 1);
-                ind.push_back(getArity() - 2);
-            } else {
-                // expand index to be full
-                for (size_t i = 0; i < getArity(); i++) {
-                    if (curIndexElems.find(i) == curIndexElems.end()) {
-                        ind.push_back(i);
-                    }
+                ind.push_back(getArity() - relation.getAuxiliaryArity() + 1);
+                ind.push_back(getArity() - relation.getAuxiliaryArity());
+                masterIndex = 0;
+            }
+
+        } else if (ind.size() < getArity()) {
+            // expand index to be full
+            for (size_t i = 0; i < getArity(); i++) {
+                if (curIndexElems.find(i) == curIndexElems.end()) {
+                    ind.push_back(i);
                 }
             }
         }
+
+        index_nr++;
     }
 
-    masterIndex = 0;
+    if (!isProvenance) {
+        masterIndex = 0;
+    }
+
+    assert(masterIndex >= 0 && masterIndex < inds.size());
 
     computedIndices = inds;
 }
@@ -146,6 +216,7 @@ std::string SynthesiserDirectRelation::getTypeName() {
 /** Generate type struct of a direct indexed relation */
 void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
     size_t arity = getArity();
+    size_t auxiliaryArity = relation.getAuxiliaryArity();
     const auto& inds = getIndices();
     size_t numIndexes = inds.size();
     std::map<MinIndexSelection::LexOrder, int> indexToNumMap;
@@ -160,8 +231,11 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
     if (isProvenance) {
         out << "struct updater_" << getTypeName() << " {\n";
         out << "void update(t_tuple& old_t, const t_tuple& new_t) {\n";
-        out << "old_t[" << arity - 2 << "] = new_t[" << arity - 2 << "];\n";
-        out << "old_t[" << arity - 1 << "] = new_t[" << arity - 1 << "];\n";
+
+        for (size_t i = arity - auxiliaryArity; i < arity; i++) {
+            out << "old_t[" << i << "] = new_t[" << i << "];\n";
+        }
+
         out << "}\n";
         out << "};\n";
     }
@@ -177,11 +251,19 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
         // for provenance, all indices must be full so we use btree_set
         // also strong/weak comparators and updater methods
         if (isProvenance) {
-            out << "using t_ind_" << i << " = btree_set<t_tuple, index_utils::comparator<" << join(ind);
-            out << ">, std::allocator<t_tuple>, 256, typename "
-                   "souffle::detail::default_strategy<t_tuple>::type, index_utils::comparator<";
-            out << join(ind.begin(), ind.end() - 2) << ">, updater_" << getTypeName() << ">;\n";
-
+            if (provenanceIndexNumbers.find(i) == provenanceIndexNumbers.end()) {  // index for bottom up
+                                                                                   // phase
+                out << "using t_ind_" << i << " = btree_set<t_tuple, index_utils::comparator<" << join(ind);
+                out << ">, std::allocator<t_tuple>, 256, typename "
+                       "souffle::detail::default_strategy<t_tuple>::type, index_utils::comparator<";
+                out << join(ind.begin(), ind.end() - auxiliaryArity) << ">, updater_" << getTypeName()
+                    << ">;\n";
+            } else {  // index for top down phase
+                out << "using t_ind_" << i << " = btree_set<t_tuple, index_utils::comparator<" << join(ind);
+                out << ">, std::allocator<t_tuple>, 256, typename "
+                       "souffle::detail::default_strategy<t_tuple>::type, index_utils::comparator<";
+                out << join(ind.begin(), ind.end()) << ">, updater_" << getTypeName() << ">;\n";
+            }
             // without provenance, some indices may be not full, so we use btree_multiset for those
         } else {
             if (ind.size() == arity) {
@@ -215,7 +297,7 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
     out << "bool insert(const t_tuple& t, context& h) {\n";
     out << "if (ind_" << masterIndex << ".insert(t, h.hints_" << masterIndex << ")) {\n";
     for (size_t i = 0; i < numIndexes; i++) {
-        if (i != masterIndex) {
+        if (i != masterIndex && provenanceIndexNumbers.find(i) == provenanceIndexNumbers.end()) {
             out << "ind_" << i << ".insert(t, h.hints_" << i << ");\n";
         }
     }
@@ -240,20 +322,6 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
     out << "RamDomain data[" << arity << "] = {" << join(params, ",") << "};\n";
     out << "return insert(data);\n";
     out << "}\n";  // end of insert(RamDomain x1, RamDomain x2, ...)
-
-    // insertAll methods
-    out << "template <typename T>\n";
-    out << "void insertAll(T& other) {\n";
-    out << "for (auto const& cur : other) {\n";
-    out << "insert(cur);\n";
-    out << "}\n";
-    out << "}\n";  // end of insertAll<T>
-
-    out << "void insertAll(" << getTypeName() << "& other) {\n";
-    for (size_t i = 0; i < numIndexes; i++) {
-        out << "ind_" << i << ".insertAll(other.ind_" << i << ");\n";
-    }
-    out << "}\n";  // end of insertAll(relationType& other)
 
     // contains methods
     out << "bool contains(const t_tuple& t, context& h) const {\n";
@@ -300,7 +368,7 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
         // count size of search pattern
         size_t indSize = 0;
         for (size_t column = 0; column < arity; column++) {
-            if ((search >> column) & 1) {
+            if (((search >> column) & 1) != 0) {
                 indSize++;
             }
         }
@@ -317,7 +385,7 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
             // check which indices to pad out
             for (size_t column = 0; column < arity; column++) {
                 // if bit number column is set
-                if (!((search >> column) & 1)) {
+                if (((search >> column) & 1) == 0) {
                     out << "low[" << column << "] = MIN_RAM_DOMAIN;\n";
                     out << "high[" << column << "] = MAX_RAM_DOMAIN;\n";
                 }
@@ -359,6 +427,17 @@ void SynthesiserDirectRelation::generateTypeStruct(std::ostream& out) {
     out << "iterator end() const {\n";
     out << "return ind_" << masterIndex << ".end();\n";
     out << "}\n";
+
+    // copyIndex method
+    if (!provenanceIndexNumbers.empty()) {
+        out << "void copyIndex() {\n";
+        out << "for (auto const &cur : ind_" << masterIndex << ") {\n";
+        for (auto const i : provenanceIndexNumbers) {
+            out << "ind_" << i << ".insert(cur);\n";
+        }
+        out << "}\n";
+        out << "}\n";
+    }
 
     // printHintStatistics method
     out << "void printHintStatistics(std::ostream& o, const std::string prefix) const {\n";
@@ -542,15 +621,6 @@ void SynthesiserIndirectRelation::generateTypeStruct(std::ostream& out) {
     out << "return insert(data);\n";
     out << "}\n";  // end of insert(RamDomain x1, RamDomain x2, ...)
 
-    // insertAll method
-    // do not use the specialized insertAll as it will copy references rather than tuples
-    out << "template <typename T>\n";
-    out << "void insertAll(T& other) {\n";
-    out << "for (auto const& cur : other) {\n";
-    out << "insert(cur);\n";
-    out << "}\n";
-    out << "}\n";
-
     // contains methods
     out << "bool contains(const t_tuple& t, context& h) const {\n";
     out << "return ind_" << masterIndex << ".contains(&t, h.hints_" << masterIndex << ");\n";
@@ -595,7 +665,7 @@ void SynthesiserIndirectRelation::generateTypeStruct(std::ostream& out) {
         // count size of search pattern
         size_t indSize = 0;
         for (size_t column = 0; column < arity; column++) {
-            if ((search >> column) & 1) {
+            if (((search >> column) & 1) != 0) {
                 indSize++;
             }
         }
@@ -611,7 +681,7 @@ void SynthesiserIndirectRelation::generateTypeStruct(std::ostream& out) {
             // check which indices to pad out
             for (size_t column = 0; column < arity; column++) {
                 // if bit number column is set
-                if (!((search >> column) & 1)) {
+                if (((search >> column) & 1) == 0) {
                     out << "low[" << column << "] = MIN_RAM_DOMAIN;\n";
                     out << "high[" << column << "] = MAX_RAM_DOMAIN;\n";
                 }
@@ -830,21 +900,6 @@ void SynthesiserBrieRelation::generateTypeStruct(std::ostream& out) {
     out << "return insert(tuple, h);\n";
     out << "}\n";
 
-    // insertAll method
-    out << "template <typename T>\n";
-    out << "void insertAll(T& other) {\n";
-    out << "for (auto const& cur : other) {\n";
-    out << "insert(cur);\n";
-    out << "}\n";
-    out << "}\n";
-
-    // insertAll using the index method
-    out << "void insertAll(" << getTypeName() << "& other) {\n";
-    for (size_t i = 0; i < numIndexes; i++) {
-        out << "ind_" << i << ".insertAll(other.ind_" << i << ");\n";
-    }
-    out << "}\n";
-
     // insert method
     std::vector<std::string> decls, params;
     for (size_t i = 0; i < arity; i++) {
@@ -905,7 +960,7 @@ void SynthesiserBrieRelation::generateTypeStruct(std::ostream& out) {
         // compute size of sub-index
         size_t indSize = 0;
         for (size_t i = 0; i < arity; i++) {
-            if ((search >> i) & 1) {
+            if (((search >> i) & 1) != 0) {
                 indSize++;
             }
         }
@@ -1096,19 +1151,6 @@ void SynthesiserEqrelRelation::generateTypeStruct(std::ostream& out) {
     out << "ind_" << masterIndex << ".extend(other.ind_" << masterIndex << ");\n";
     out << "}\n";
 
-    // insertAll method
-    out << "template <typename T>\n";
-    out << "void insertAll(T& other) {\n";
-    out << "for (auto const& cur : other) {\n";
-    out << "insert(cur);\n";
-    out << "}\n";
-    out << "}\n";
-
-    // insertAll using the index method
-    out << "void insertAll(" << getTypeName() << "& other) {\n";
-    out << "ind_" << masterIndex << ".insertAll(other.ind_" << masterIndex << ");\n";
-    out << "}\n";
-
     // contains methods
     out << "bool contains(const t_tuple& t) const {\n";
     out << "return ind_" << masterIndex << ".contains(t[0], t[1]);\n";
@@ -1139,7 +1181,7 @@ void SynthesiserEqrelRelation::generateTypeStruct(std::ostream& out) {
         // compute size of sub-index
         size_t indSize = 0;
         for (size_t column = 0; column < 2; column++) {
-            if ((i >> column) & 1) {
+            if (((i >> column) & 1) != 0) {
                 indSize++;
             }
         }

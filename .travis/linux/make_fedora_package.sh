@@ -17,7 +17,8 @@ git fetch --tags --unshallow
 ./bootstrap
 ./configure --prefix=`pwd`/usr
 
-make -j2 install
+JOBS=$(nproc)
+make -j$JOBS install
 
 fpm -t rpm -n souffle -v `git describe --tags --always` \
     -d gcc-c++ \

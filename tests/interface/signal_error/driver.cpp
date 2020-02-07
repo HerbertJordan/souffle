@@ -17,9 +17,9 @@
 
 #include "souffle/SouffleInterface.h"
 #include <array>
+#include <csignal>
 #include <string>
 #include <vector>
-#include <signal.h>
 
 using namespace souffle;
 

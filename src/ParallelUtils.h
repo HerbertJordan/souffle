@@ -37,7 +37,6 @@
 
 // support for parallel loops
 #define pfor _Pragma("omp for schedule(dynamic)") for
-#define cilk_for for
 
 // spawn and sync are processed sequentially (overhead to expensive)
 #define task_spawn
@@ -59,43 +58,6 @@
 #define CREATE_OP_CONTEXT(NAME, INIT) auto NAME = INIT;
 #define READ_OP_CONTEXT(NAME) NAME
 
-#elif defined __cilk
-
-/**
- * Implementation of parallel control flow constructs utilizing Cilk
- */
-
-#include <cilk/cilk.h>
-#include <cilk/holder.h>
-
-// support for a parallel region
-#define PARALLEL_START {
-#define PARALLEL_END }
-
-// support for parallel loops
-#define pfor cilk_for
-
-// spawn and sync support is a direct forward
-#define task_spawn cilk_spawn
-#define task_sync cilk_sync
-
-// section start / end
-#define SECTIONS_START {
-#define SECTIONS_END \
-    cilk_sync;       \
-    }
-
-// the markers for a single section
-#define SECTION_START cilk_spawn[&]() {
-#define SECTION_END \
-    }               \
-    ();
-
-// a macro to create an operation context
-#define CREATE_OP_CONTEXT(NAME, INIT) typename cilk::holder<decltype(INIT)> NAME(INIT);
-#define READ_OP_CONTEXT(NAME) (NAME())
-//    #define CREATE_OP_CONTEXT(NAME,INIT) thread_local auto NAME = INIT;
-
 #else
 
 // support for a parallel region => sequential execution
@@ -104,7 +66,6 @@
 
 // support for parallel loops => simple sequential loop
 #define pfor for
-#define cilk_for for
 
 // spawn and sync not supported
 #define task_spawn
@@ -160,7 +121,7 @@ public:
         }
         Lease(const Lease& other) = delete;
         ~Lease() {
-            if (mux) {
+            if (mux != nullptr) {
                 mux->unlock();
             }
         }

@@ -56,6 +56,7 @@ private:
     static void checkLiteral(ErrorReport& report, const AstProgram& program, const AstLiteral& literal);
     static void checkAggregator(
             ErrorReport& report, const AstProgram& program, const AstAggregator& aggregator);
+    static bool isDependent(const AstClause& agg1, const AstClause& agg2);
     static void checkArgument(ErrorReport& report, const AstProgram& program, const AstArgument& arg);
     static void checkConstant(ErrorReport& report, const AstArgument& argument);
     static void checkFact(ErrorReport& report, const AstProgram& program, const AstClause& fact);

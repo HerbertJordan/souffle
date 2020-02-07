@@ -53,32 +53,42 @@ git describe --tags --abbrev=0 --always
 git describe --all --abbrev=0 --always
 git describe --tags --abbrev=0
 
-# Find the test case that we will be displaying
-CANDIDATE=`ls $TEST_ROOT | head -1`
-pretty_print "Displaying contents of failed test-case no. $CANDIDATE from $TEST_ROOT"
-echo
+if [ -n "$TEST_ROOT" ]; then
+    # Find the test case that we will be displaying
+    CANDIDATE=`ls $TEST_ROOT | head -1`
+    pretty_print "Displaying contents of failed test-case no. $CANDIDATE from $TEST_ROOT"
+    echo
 
-# Show the contents of its directory
-pretty_print "Directory contents: "
-ls -l "$TEST_ROOT/$CANDIDATE"
-echo
+    # Show the contents of its directory
+    pretty_print "Directory contents: "
+    ls -l "$TEST_ROOT/$CANDIDATE"
+    echo
 
-# Print any of the relevant files in the directory (up to a maximum, for readability's sake)
-for EXTENSION in $RELEVANT_EXTENSIONS; do
-    for FI in "$TEST_ROOT/$CANDIDATE/"*$EXTENSION; do
-        pretty_print "File: $(basename $FI)"
-        head -$MAXIMUM_LINES $FI
-        echo
+    # Print any of the relevant files in the directory (up to a maximum, for readability's sake)
+    for EXTENSION in $RELEVANT_EXTENSIONS; do
+        for FI in "$TEST_ROOT/$CANDIDATE/"*$EXTENSION; do
+            pretty_print "File: $(basename $FI)"
+            head -$MAXIMUM_LINES $FI
+            echo
+        done
     done
-done
 
-if [ -e "$TEST_ROOT/$CANDIDATE/core" ]
+    if [ -e "$TEST_ROOT/$CANDIDATE/core" ]
+    then
+        pretty_print "Core dump found"
+        gdb -batch -ex 'bt' ./src/souffle "$TEST_ROOT/$CANDIDATE/core"
+    fi
+
+elif [ -f "src/test-suite.log" ]
 then
-    pretty_print "Core dump found"
-    gdb -batch -ex 'bt' ./src/souffle "$TEST_ROOT/$CANDIDATE/core"
+    pretty_print "Display unit test log"
+    cat "src/test-suite.log"
+
+else
+    pretty_print "No test logs found"
 fi
 
-if [ $TRAVIS_OS_NAME == osx ]
+if [ "$TRAVIS_OS_NAME" == "osx" ]
 then
     pretty_print "OSX Diagnostic Reports"
     for f in ~/Library/Logs/DiagnosticReports/*; do

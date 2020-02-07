@@ -23,6 +23,7 @@
 #include "AstNode.h"
 #include "AstRelationIdentifier.h"
 #include "AstType.h"
+#include "Global.h"
 #include "RelationRepresentation.h"
 
 #include <iostream>
@@ -59,6 +60,9 @@
 /* Relation uses a union relation */
 #define EQREL_RELATION (0x100)
 
+/* Relation is an info relation for provenance */
+#define INFO_RELATION (0x200)
+
 /* Relation warnings are suppressed */
 #define SUPPRESSED_RELATION (0x800)
 
@@ -76,7 +80,24 @@ class AstRelation : public AstNode {
 public:
     AstRelation() = default;
 
-    ~AstRelation() override = default;
+    void print(std::ostream& os) const override {
+        os << ".decl " << this->getName() << "(";
+        if (!attributes.empty()) {
+            os << attributes[0]->getAttributeName() << ":" << attributes[0]->getTypeName();
+
+            for (size_t i = 1; i < attributes.size(); ++i) {
+                os << "," << attributes[i]->getAttributeName() << ":" << attributes[i]->getTypeName();
+            }
+        }
+        os << ") ";
+        if (isOverridable()) {
+            os << "overridable ";
+        }
+        if (isInline()) {
+            os << "inline ";
+        }
+        os << representation << " ";
+    }
 
     /** Return the name of the relation */
     const AstRelationIdentifier& getName() const {
@@ -117,25 +138,26 @@ public:
     /** Set qualifier associated with this relation */
     void setQualifier(int q) {
         qualifier = q;
-        if (q & EQREL_RELATION) {
+        if ((q & EQREL_RELATION) != 0) {
             representation = RelationRepresentation::EQREL;
-        } else if (q & BRIE_RELATION) {
+        } else if ((q & BRIE_RELATION) != 0) {
             representation = RelationRepresentation::BRIE;
-        } else if (q & BTREE_RELATION) {
+        } else if ((q & BTREE_RELATION) != 0) {
             representation = RelationRepresentation::BTREE;
+        } else if ((q & INFO_RELATION) != 0) {
+            representation = RelationRepresentation::INFO;
         }
-
-        if (q & INPUT_RELATION) {
+        if ((q & INPUT_RELATION) != 0) {
             loads.emplace_back(new AstLoad());
             loads.back()->setName(getName());
             loads.back()->setSrcLoc(getSrcLoc());
         }
-        if (q & OUTPUT_RELATION) {
+        if ((q & OUTPUT_RELATION) != 0) {
             stores.emplace_back(new AstStore());
             stores.back()->setName(getName());
             stores.back()->setSrcLoc(getSrcLoc());
         }
-        if (q & PRINTSIZE_RELATION) {
+        if ((q & PRINTSIZE_RELATION) != 0) {
             stores.emplace_back(new AstPrintSize());
             stores.back()->setName(getName());
             stores.back()->setSrcLoc(getSrcLoc());
@@ -170,81 +192,12 @@ public:
     bool hasRecordInHead() const {
         for (auto& cur : clauses) {
             for (auto* arg : cur->getHead()->getArguments()) {
-                if (dynamic_cast<AstRecordInit*>(arg)) {
+                if (dynamic_cast<AstRecordInit*>(arg) != nullptr) {
                     return true;
                 }
             };
         }
         return false;
-    }
-
-    /** Operator overload, calls print if reference is given */
-    friend std::ostream& operator<<(std::ostream& os, const AstRelation& rel) {
-        rel.print(os);
-        return os;
-    }
-
-    /** Operator overload, prints name if pointer is given */
-    friend std::ostream& operator<<(std::ostream& os, const AstRelation* rel) {
-        os << rel->getName();
-        return os;
-    }
-
-    /** Print string representation of the relation to a given output stream */
-    void print(std::ostream& os) const override {
-        os << ".decl " << this->getName() << "(";
-        if (!attributes.empty()) {
-            os << attributes[0]->getAttributeName() << ":" << attributes[0]->getTypeName();
-
-            for (size_t i = 1; i < attributes.size(); ++i) {
-                os << "," << attributes[i]->getAttributeName() << ":" << attributes[i]->getTypeName();
-            }
-        }
-        os << ") ";
-        if (isOverridable()) {
-            os << "overridable ";
-        }
-        if (isInline()) {
-            os << "inline ";
-        }
-        os << representation << " ";
-    }
-
-    /** Creates a clone of this AST sub-structure */
-    AstRelation* clone() const override {
-        auto res = new AstRelation();
-        res->name = name;
-        res->setSrcLoc(getSrcLoc());
-        for (const auto& cur : attributes) {
-            res->attributes.emplace_back(cur->clone());
-        }
-        for (const auto& cur : clauses) {
-            res->clauses.emplace_back(cur->clone());
-        }
-        for (const auto& cur : stores) {
-            res->stores.emplace_back(cur->clone());
-        }
-        for (const auto& cur : loads) {
-            res->loads.emplace_back(cur->clone());
-        }
-        res->qualifier = qualifier;
-        return res;
-    }
-
-    /** Mutates this node */
-    void apply(const AstNodeMapper& map) override {
-        for (auto& cur : attributes) {
-            cur = map(std::move(cur));
-        }
-        for (auto& cur : clauses) {
-            cur = map(std::move(cur));
-        }
-        for (auto& cur : stores) {
-            cur = map(std::move(cur));
-        }
-        for (auto& cur : loads) {
-            cur = map(std::move(cur));
-        }
     }
 
     /** Return i-th clause associated with this relation */
@@ -259,8 +212,8 @@ public:
 
     /** Add a clause to the relation */
     void addClause(std::unique_ptr<AstClause> clause) {
-        assert(clause && "Undefined clause");
-        assert(clause->getHead() && "Undefined head of the clause");
+        assert(clause != nullptr && "Undefined clause");
+        assert(clause->getHead() != nullptr && "Undefined head of the clause");
         assert(clause->getHead()->getName() == name &&
                 "Name of the atom in the head of the clause and the relation do not match");
         clauses.push_back(std::move(clause));
@@ -282,7 +235,63 @@ public:
         return clauses.size();
     }
 
-    /** Obtains a list of all embedded child nodes */
+    /** add store */
+    void addStore(std::unique_ptr<AstStore> directive) {
+        assert(directive && "Undefined directive");
+        stores.push_back(std::move(directive));
+    }
+
+    /** add load */
+    void addLoad(std::unique_ptr<AstLoad> directive) {
+        assert(directive && "Undefined directive");
+        loads.push_back(std::move(directive));
+    }
+
+    /** get stores */
+    std::vector<AstStore*> getStores() const {
+        return toPtrVector(stores);
+    }
+
+    /** get loads */
+    std::vector<AstLoad*> getLoads() const {
+        return toPtrVector(loads);
+    }
+
+    AstRelation* clone() const override {
+        auto res = new AstRelation();
+        res->name = name;
+        res->setSrcLoc(getSrcLoc());
+        for (const auto& cur : attributes) {
+            res->attributes.emplace_back(cur->clone());
+        }
+        for (const auto& cur : clauses) {
+            res->clauses.emplace_back(cur->clone());
+        }
+        for (const auto& cur : stores) {
+            res->stores.emplace_back(cur->clone());
+        }
+        for (const auto& cur : loads) {
+            res->loads.emplace_back(cur->clone());
+        }
+        res->qualifier = qualifier;
+        return res;
+    }
+
+    void apply(const AstNodeMapper& map) override {
+        for (auto& cur : attributes) {
+            cur = map(std::move(cur));
+        }
+        for (auto& cur : clauses) {
+            cur = map(std::move(cur));
+        }
+        for (auto& cur : stores) {
+            cur = map(std::move(cur));
+        }
+        for (auto& cur : loads) {
+            cur = map(std::move(cur));
+        }
+    }
+
     std::vector<const AstNode*> getChildNodes() const override {
         std::vector<const AstNode*> res;
         for (const auto& cur : attributes) {
@@ -300,24 +309,15 @@ public:
         return res;
     }
 
-    void addStore(std::unique_ptr<AstStore> directive) {
-        assert(directive && "Undefined directive");
-        stores.push_back(std::move(directive));
-    }
-
-    void addLoad(std::unique_ptr<AstLoad> directive) {
-        assert(directive && "Undefined directive");
-        loads.push_back(std::move(directive));
-    }
-
-    std::vector<AstStore*> getStores() const {
-        return toPtrVector(stores);
-    }
-    std::vector<AstLoad*> getLoads() const {
-        return toPtrVector(loads);
-    }
-
 protected:
+    /** Implements the node comparison for this node type */
+    bool equal(const AstNode& node) const override {
+        assert(nullptr != dynamic_cast<const AstRelation*>(&node));
+        const auto& other = static_cast<const AstRelation&>(node);
+        return name == other.name && equal_targets(attributes, other.attributes) &&
+               equal_targets(clauses, other.clauses);
+    }
+
     /** Name of relation */
     AstRelationIdentifier name;
 
@@ -339,14 +339,6 @@ protected:
 
     /** Datastructure to use for this relation */
     RelationRepresentation representation{RelationRepresentation::DEFAULT};
-
-    /** Implements the node comparison for this node type */
-    bool equal(const AstNode& node) const override {
-        assert(nullptr != dynamic_cast<const AstRelation*>(&node));
-        const auto& other = static_cast<const AstRelation&>(node);
-        return name == other.name && equal_targets(attributes, other.attributes) &&
-               equal_targets(clauses, other.clauses);
-    }
 };
 
 struct AstNameComparison {

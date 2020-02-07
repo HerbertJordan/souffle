@@ -17,6 +17,7 @@
 #include "Brie.h"
 #include "test.h"
 #include <cstring>
+#include <random>
 
 using namespace souffle;
 
@@ -261,8 +262,8 @@ TEST(SparseArray, Merge) {
     m1.addAll(m2);
 
     std::vector<std::pair<int, int>> data;
-    for (auto it = m1.begin(); it != m1.end(); ++it) {
-        data.push_back(*it);
+    for (const auto& it : m1) {
+        data.push_back(it);
     }
     EXPECT_EQ("[(100,1),(500,2)]", toString(data));
 }
@@ -1268,7 +1269,10 @@ TEST(Trie, Parallel) {
         }
 
         // shuffle data
-        std::random_shuffle(full.begin(), full.end());
+        std::random_device rd;
+        std::mt19937 generator(rd());
+
+        std::shuffle(full.begin(), full.end(), generator);
 
         // now insert all those values into a new set - in parallel
         Trie<2> res;

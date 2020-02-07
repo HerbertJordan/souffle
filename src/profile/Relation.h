@@ -59,7 +59,7 @@ public:
     std::string createRecID(std::string name) {
         for (auto& iter : iterations) {
             for (auto& rul : iter->getRules()) {
-                if (rul.second->getName().compare(name) == 0) {
+                if (rul.second->getName() == name) {
                     return rul.second->getId();
                 }
             }
@@ -90,7 +90,7 @@ public:
     std::chrono::microseconds getRecTime() const {
         std::chrono::microseconds result{};
         for (auto& iter : iterations) {
-            result = iter->getRuntime();
+            result += iter->getRuntime();
         }
         return result;
     }

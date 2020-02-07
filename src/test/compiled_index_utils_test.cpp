@@ -16,7 +16,7 @@
 
 #include "test.h"
 
-#include "CompiledRelation.h"
+#include "CompiledIndexUtils.h"
 
 namespace souffle {
 namespace ram {
@@ -59,9 +59,6 @@ TEST(IndicesTools, Contains) {
 }
 
 TEST(IndicesTools, Arity) {
-    EXPECT_TRUE((index_utils::check_arity<2, index<0>, index<1>>::value));
-    EXPECT_TRUE((index_utils::check_arity<2, index<0, 1>, index<1, 0>>::value));
-
     EXPECT_FALSE((index_utils::contains<int, double>::value));
     EXPECT_FALSE((index_utils::contains<int, double, float>::value));
     EXPECT_FALSE((index_utils::contains<int, double, float, unsigned>::value));
@@ -100,78 +97,6 @@ TEST(IndicesTools, FullIndex) {
     EXPECT_EQ(typeid(index<0, 1>), typeid(index_utils::get_full_index<2>::type));
     EXPECT_EQ(typeid(index<0, 1, 2>), typeid(index_utils::get_full_index<3>::type));
     EXPECT_EQ(typeid(index<0, 1, 2, 3>), typeid(index_utils::get_full_index<4>::type));
-}
-
-TEST(IndicesTools, ExtendToFullIndex) {
-    EXPECT_EQ(typeid(index<>), typeid(index_utils::extend_to_full_index<0, index<>>::type));
-    EXPECT_EQ(typeid(index<0>), typeid(index_utils::extend_to_full_index<1, index<>>::type));
-    EXPECT_EQ(typeid(index<0, 1>), typeid(index_utils::extend_to_full_index<2, index<>>::type));
-    EXPECT_EQ(typeid(index<0, 1, 2>), typeid(index_utils::extend_to_full_index<3, index<>>::type));
-
-    EXPECT_EQ(typeid(index<0>), typeid(index_utils::extend_to_full_index<1, index<0>>::type));
-    EXPECT_EQ(typeid(index<1, 0>), typeid(index_utils::extend_to_full_index<2, index<1>>::type));
-    EXPECT_EQ(typeid(index<2, 0, 1>), typeid(index_utils::extend_to_full_index<3, index<2>>::type));
-
-    EXPECT_EQ(typeid(index<1, 0>), typeid(index_utils::extend_to_full_index<2, index<1, 0>>::type));
-    EXPECT_EQ(typeid(index<1, 0, 2>), typeid(index_utils::extend_to_full_index<3, index<1, 0>>::type));
-    EXPECT_EQ(typeid(index<1, 0, 2, 3>), typeid(index_utils::extend_to_full_index<4, index<1, 0>>::type));
-}
-
-TEST(IndicesTools, IsPrefix) {
-    // those should work:
-    EXPECT_TRUE((index_utils::is_prefix<index<>, index<>>::value));
-    EXPECT_TRUE((index_utils::is_prefix<index<>, index<0>>::value));
-    EXPECT_TRUE((index_utils::is_prefix<index<>, index<1>>::value));
-
-    EXPECT_TRUE((index_utils::is_prefix<index<0>, index<0>>::value));
-    EXPECT_TRUE((index_utils::is_prefix<index<0>, index<0, 0>>::value));
-    EXPECT_TRUE((index_utils::is_prefix<index<1>, index<1, 0>>::value));
-
-    EXPECT_TRUE((index_utils::is_prefix<index<1, 0>, index<1, 0, 1>>::value));
-    EXPECT_TRUE((index_utils::is_prefix<index<1, 0, 1>, index<1, 0, 1>>::value));
-
-    // a few false checks
-    EXPECT_FALSE((index_utils::is_prefix<index<0>, index<>>::value));
-    EXPECT_FALSE((index_utils::is_prefix<index<0, 1>, index<1>>::value));
-    EXPECT_FALSE((index_utils::is_prefix<index<1, 0>, index<0, 1>>::value));
-}
-
-TEST(IndicesTools, IsPermutation) {
-    // those should work:
-    EXPECT_TRUE((index_utils::is_permutation<index<0, 1>, index<0, 1>>::value));
-    EXPECT_TRUE((index_utils::is_permutation<index<0, 1>, index<1, 0>>::value));
-    EXPECT_TRUE((index_utils::is_permutation<index<2, 1, 4, 0, 3>, index<4, 1, 0, 3, 2>>::value));
-
-    // a few false checks
-    EXPECT_FALSE((index_utils::is_permutation<index<0>, index<1>>::value));
-    EXPECT_FALSE((index_utils::is_permutation<index<0, 1>, index<1>>::value));
-    EXPECT_FALSE((index_utils::is_permutation<index<0, 1>, index<0, 2>>::value));
-}
-
-TEST(IndicesTools, IsCompatibleWith) {
-    // those should work:
-    EXPECT_TRUE((index_utils::is_compatible_with<index<0>, index<0, 1>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<0, 1>, index<0, 1>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<1, 0>, index<0, 1>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<0, 1>, index<0, 1, 2>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<1, 0>, index<0, 1, 2>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<0, 1, 2>, index<0, 1, 2>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<0, 2, 1>, index<0, 1, 2>>::value));
-    EXPECT_TRUE((index_utils::is_compatible_with<index<2, 1, 0>, index<0, 1, 2>>::value));
-
-    // a few false checks
-    EXPECT_FALSE((index_utils::is_compatible_with<index<0>, index<1>>::value));
-    EXPECT_FALSE((index_utils::is_compatible_with<index<1>, index<0, 1>>::value));
-    EXPECT_FALSE((index_utils::is_compatible_with<index<0, 1>, index<1>>::value));
-    EXPECT_FALSE((index_utils::is_compatible_with<index<0, 1>, index<0, 2>>::value));
-}
-
-TEST(IndicesTools, GetPrefix) {
-    EXPECT_EQ(typeid(index<>), typeid(index_utils::get_prefix<0, index<0, 1, 3, 2>>::type));
-    EXPECT_EQ(typeid(index<0>), typeid(index_utils::get_prefix<1, index<0, 1, 3, 2>>::type));
-    EXPECT_EQ(typeid(index<0, 1>), typeid(index_utils::get_prefix<2, index<0, 1, 3, 2>>::type));
-    EXPECT_EQ(typeid(index<0, 1, 3>), typeid(index_utils::get_prefix<3, index<0, 1, 3, 2>>::type));
-    EXPECT_EQ(typeid(index<0, 1, 3, 2>), typeid(index_utils::get_prefix<4, index<0, 1, 3, 2>>::type));
 }
 
 }  // namespace ram

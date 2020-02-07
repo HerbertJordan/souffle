@@ -42,70 +42,132 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
-#include <libgen.h>
 #include <sys/stat.h>
+
+#ifndef _WIN32
+#include <libgen.h>
 #include <unistd.h>
+#else
+#include <fcntl.h>
+#include <io.h>
+#include <stdlib.h>
+#include <windows.h>
 
 /**
- * Converts a string to a number
+ * Windows headers define these and they interfere with the standard library
+ * functions.
  */
+#undef min
+#undef max
 
-#if RAM_DOMAIN_SIZE == 64
-#define stord(a) std::stoll(a)
-#elif RAM_DOMAIN_SIZE == 32
-#define stord(a) std::stoi(a)
-#else
-#error RAM Domain is neither 32bit nor 64bit
-#endif
+#define X_OK 1 /* execute permission - unsupported in windows*/
 
-#if __cplusplus == 201103L
-// make_unique implementation for C++11
-// https://isocpp.org/files/papers/N3656.txt
-namespace std {
-template <class T>
-struct _Unique_if {
-    using _Single_object = unique_ptr<T>;
-};
+#define PATH_MAX 260
 
-template <class T>
-struct _Unique_if<T[]> {
-    using _Unknown_bound = unique_ptr<T[]>;
-};
-
-template <class T, size_t N>
-struct _Unique_if<T[N]> {
-    using _Known_bound = void;
-};
-
-template <class T, class... Args>
-typename _Unique_if<T>::_Single_object make_unique(Args&&... args) {
-    return unique_ptr<T>(new T(std::forward<Args>(args)...));
+/**
+ * access and realpath are missing on windows, we use their windows equivalents
+ * as work-arounds.
+ */
+#define access _access
+inline char* realpath(const char* path, char* resolved_path) {
+    return _fullpath(resolved_path, path, PATH_MAX);
 }
 
-template <class T>
-typename _Unique_if<T>::_Unknown_bound make_unique(size_t n) {
-    using U = typename remove_extent<T>::type;
-    return unique_ptr<T>(new U[n]());
+/**
+ * On windows, the following gcc builtins are missing.
+ *
+ * In the case of popcountll, __popcnt64 is the windows equivalent.
+ *
+ * For ctz and ctzll, BitScanForward and BitScanForward64 are the respective
+ * windows equivalents.  However ctz is used in a constexpr context, and we can't
+ * use BitScanForward, so we implement it ourselves.
+ */
+#define __builtin_popcountll __popcnt64
+
+constexpr unsigned long __builtin_ctz(unsigned long value) {
+    unsigned long trailing_zeroes = 0;
+    while ((value = value >> 1) ^ 1) {
+        ++trailing_zeroes;
+    }
+    return trailing_zeroes;
 }
 
-template <class T, class... Args>
-typename _Unique_if<T>::_Known_bound make_unique(Args&&...) = delete;
-}  // namespace std
+inline unsigned long __builtin_ctzll(unsigned long long value) {
+    unsigned long trailing_zero = 0;
 
+    if (_BitScanForward64(&trailing_zero, value)) {
+        return trailing_zero;
+    } else {
+        return 64;
+    }
+}
 #endif
 
 namespace souffle {
 
 /**
- * Check whether a string is a sequence of numbers
+ * Converts a string to a RamDomain
+ */
+inline RamDomain RamDomainFromString(
+        const std::string& str, std::size_t* position = nullptr, const int base = 10) {
+    RamDomain val;
+#if RAM_DOMAIN_SIZE == 64
+    val = std::stoll(str, position, base);
+#else
+    val = std::stoi(str, position, base);
+#endif
+    return static_cast<RamDomain>(val);
+}
+
+/**
+ * Converts a string to a RamFloat
+ */
+inline RamFloat RamFloatFromString(const std::string& str, std::size_t* position = nullptr) {
+    RamFloat val;
+#if RAM_DOMAIN_SIZE == 64
+    val = std::stod(str, position);
+#else
+    val = std::stof(str, position);
+#endif
+    return static_cast<RamFloat>(val);
+}
+
+/**
+ * Converts a string to a RamUnsigned
+ */
+inline RamUnsigned RamUnsignedFromString(
+        const std::string& str, std::size_t* position = nullptr, const int base = 10) {
+    RamUnsigned val;
+#if RAM_DOMAIN_SIZE == 64
+    val = std::stoul(str, position, base);
+#else
+    val = std::stoull(str, position, base);
+#endif
+    return static_cast<RamUnsigned>(val);
+}
+
+#if RAM_DOMAIN_SIZE == 64
+inline RamDomain stord(const std::string& str, std::size_t* pos = nullptr, int base = 10) {
+    return static_cast<RamDomain>(std::stoull(str, pos, base));
+}
+#elif RAM_DOMAIN_SIZE == 32
+inline RamDomain stord(const std::string& str, std::size_t* pos = nullptr, int base = 10) {
+    return static_cast<RamDomain>(std::stoul(str, pos, base));
+}
+#else
+#error RAM Domain is neither 32bit nor 64bit
+#endif
+
+/**
+ * Check whether a string is a sequence of digits
  */
 inline bool isNumber(const char* str) {
     if (str == nullptr) {
         return false;
     }
 
-    while (*str) {
-        if (!isdigit(*str)) {
+    while (*str != 0) {
+        if (isdigit(*str) == 0) {
             return false;
         }
         str++;
@@ -283,7 +345,9 @@ struct range {
     std::vector<range> partition(int np = 100) {
         // obtain the size
         int n = 0;
-        for (auto i = a; i != b; ++i) n++;
+        for (auto i = a; i != b; ++i) {
+            n++;
+        }
 
         // split it up
         auto s = n / np;
@@ -520,7 +584,7 @@ public:
     }
     int overflow(int c) override {
         for (auto stream : streams) {
-            stream->put(c);
+            stream->put(static_cast<char>(c));
         }
         return c;
     }
@@ -636,7 +700,7 @@ struct print_deref : public detail::print<deref<T>> {};
 template <typename Iter, typename Printer>
 detail::joined_sequence<Iter, Printer> join(
         const Iter& a, const Iter& b, const std::string& sep, const Printer& p) {
-    return detail::joined_sequence<Iter, Printer>(a, b, sep, p);
+    return souffle::detail::joined_sequence<Iter, Printer>(a, b, sep, p);
 }
 
 /**
@@ -984,12 +1048,12 @@ inline time_point now() {
 
 // a shortcut for obtaining the time difference in milliseconds
 inline long duration_in_us(const time_point& start, const time_point& end) {
-    return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    return static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
 }
 
 // a shortcut for obtaining the time difference in nanoseconds
 inline long duration_in_ns(const time_point& start, const time_point& end) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    return static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count());
 }
 
 // -------------------------------------------------------------------------------
@@ -1026,7 +1090,7 @@ inline bool existDir(const std::string& name) {
  * Check whether a given file exists and it is an executable
  */
 inline bool isExecutable(const std::string& name) {
-    return existFile(name) && !access(name.c_str(), X_OK);
+    return existFile(name) && (access(name.c_str(), X_OK) == 0);
 }
 
 /**
@@ -1034,7 +1098,7 @@ inline bool isExecutable(const std::string& name) {
  */
 inline std::string which(const std::string& name) {
     char buf[PATH_MAX];
-    if (::realpath(name.c_str(), buf) && isExecutable(buf)) {
+    if ((::realpath(name.c_str(), buf) != nullptr) && isExecutable(buf)) {
         return buf;
     }
     const char* syspath = ::getenv("PATH");
@@ -1046,7 +1110,7 @@ inline std::string which(const std::string& name) {
     std::string sub;
     while (std::getline(sstr, sub, ':')) {
         std::string path = sub + "/" + name;
-        if (isExecutable(path) && realpath(path.c_str(), buf)) {
+        if (isExecutable(path) && (realpath(path.c_str(), buf) != nullptr)) {
             return buf;
         }
     }
@@ -1090,10 +1154,14 @@ inline std::string absPath(const std::string& path) {
  *  Join two paths together; note that this does not resolve overlaps or relative paths.
  */
 inline std::string pathJoin(const std::string& first, const std::string& second) {
-    unsigned firstPos = first.size() - 1;
-    while (first.at(firstPos) == '/') firstPos--;
+    unsigned firstPos = static_cast<unsigned>(first.size()) - 1;
+    while (first.at(firstPos) == '/') {
+        firstPos--;
+    }
     unsigned secondPos = 0;
-    while (second.at(secondPos) == '/') secondPos++;
+    while (second.at(secondPos) == '/') {
+        secondPos++;
+    }
     return first.substr(0, firstPos + 1) + '/' + second.substr(secondPos);
 }
 
@@ -1131,7 +1199,7 @@ inline std::string baseName(const std::string& filename) {
 
     size_t lastSlashBeforeBasename = filename.find_last_of('/', lastNotSlash - 1);
     if (lastSlashBeforeBasename == std::string::npos) {
-        lastSlashBeforeBasename = -1;
+        lastSlashBeforeBasename = static_cast<size_t>(-1);
     }
     return filename.substr(lastSlashBeforeBasename + 1, lastNotSlash - lastSlashBeforeBasename);
 }
@@ -1143,10 +1211,14 @@ inline std::string simpleName(const std::string& path) {
     std::string name = baseName(path);
     const size_t lastDot = name.find_last_of('.');
     // file has no extension
-    if (lastDot == std::string::npos) return name;
+    if (lastDot == std::string::npos) {
+        return name;
+    }
     const size_t lastSlash = name.find_last_of('/');
     // last slash occurs after last dot, so no extension
-    if (lastSlash != std::string::npos && lastSlash > lastDot) return name;
+    if (lastSlash != std::string::npos && lastSlash > lastDot) {
+        return name;
+    }
     // last dot after last slash, or no slash
     return name.substr(0, lastDot);
 }
@@ -1158,10 +1230,14 @@ inline std::string fileExtension(const std::string& path) {
     std::string name = path;
     const size_t lastDot = name.find_last_of('.');
     // file has no extension
-    if (lastDot == std::string::npos) return std::string();
+    if (lastDot == std::string::npos) {
+        return std::string();
+    }
     const size_t lastSlash = name.find_last_of('/');
     // last slash occurs after last dot, so no extension
-    if (lastSlash != std::string::npos && lastSlash > lastDot) return std::string();
+    if (lastSlash != std::string::npos && lastSlash > lastDot) {
+        return std::string();
+    }
     // last dot after last slash, or no slash
     return name.substr(lastDot + 1);
 }
@@ -1170,9 +1246,20 @@ inline std::string fileExtension(const std::string& path) {
  * Generate temporary file.
  */
 inline std::string tempFile() {
+#ifdef _WIN32
+    std::string templ;
+    std::FILE* f = nullptr;
+    while (f == nullptr) {
+        templ = std::tmpnam(nullptr);
+        f = fopen(templ.c_str(), "wx");
+    }
+    fclose(f);
+    return templ;
+#else
     char templ[40] = "./souffleXXXXXX";
     close(mkstemp(templ));
     return std::string(templ);
+#endif
 }
 
 /**
@@ -1211,109 +1298,11 @@ inline std::string stringify(const std::string& input) {
 /** Valid C++ identifier, note that this does not ensure the uniqueness of identifiers returned. */
 inline std::string identifier(std::string id) {
     for (size_t i = 0; i < id.length(); i++) {
-        if ((!isalpha(id[i]) && i == 0) || (!isalnum(id[i]) && id[i] != '_')) {
+        if (((isalpha(id[i]) == 0) && i == 0) || ((isalnum(id[i]) == 0) && id[i] != '_')) {
             id[i] = '_';
         }
     }
     return id;
-}
-
-/* begin reference implementation
- * http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2406.html#shared_mutex */
-// This simply exists as we do not compile using C++17. If we change standard >=C++17,
-// souffle::shared_mutex should be exchanged with std::shared_mutex
-// Slight cosmetic adjustments have been made
-class shared_mutex {
-    std::mutex mut_;
-    std::condition_variable gate1_;
-    std::condition_variable gate2_;
-    unsigned state_ = 0;
-
-    static const unsigned write_entered_ = 1U << (sizeof(unsigned) * CHAR_BIT - 1);
-    static const unsigned n_readers_ = ~write_entered_;
-
-public:
-    shared_mutex() = default;
-
-    // Exclusive ownership
-    void lock() {
-        std::unique_lock<std::mutex> lk(mut_);
-        while (state_ & write_entered_) gate1_.wait(lk);
-        state_ |= write_entered_;
-        while (state_ & n_readers_) gate2_.wait(lk);
-    }
-
-    bool try_lock() {
-        std::unique_lock<std::mutex> lk(mut_, std::try_to_lock);
-        if (lk.owns_lock() && state_ == 0) {
-            state_ = write_entered_;
-            return true;
-        }
-        return false;
-    }
-
-    void unlock() {
-        {
-            std::lock_guard<std::mutex> _(mut_);
-            state_ = 0;
-        }
-        gate1_.notify_all();
-    }
-
-    // Shared ownership
-    void lock_shared() {
-        std::unique_lock<std::mutex> lk(mut_);
-        while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_) gate1_.wait(lk);
-        unsigned num_readers = (state_ & n_readers_) + 1;
-        state_ &= ~n_readers_;
-        state_ |= num_readers;
-    }
-
-    bool try_lock_shared() {
-        std::unique_lock<std::mutex> lk(mut_, std::try_to_lock);
-        unsigned num_readers = state_ & n_readers_;
-
-        if (lk.owns_lock() && !(state_ & write_entered_) && num_readers != n_readers_) {
-            ++num_readers;
-            state_ &= ~n_readers_;
-            state_ |= num_readers;
-            return true;
-        }
-        return false;
-    }
-
-    void unlock_shared() {
-        std::lock_guard<std::mutex> _(mut_);
-        unsigned num_readers = (state_ & n_readers_) - 1;
-        state_ &= ~n_readers_;
-        state_ |= num_readers;
-
-        if (state_ & write_entered_) {
-            if (num_readers == 0) gate2_.notify_one();
-        } else {
-            if (num_readers == n_readers_ - 1) gate1_.notify_one();
-        }
-    }
-};
-
-/* end http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2406.html#shared_mutex */
-
-/**
- * A utility function to set the maximum number of retries for a transaction
- * if Intel RTM is enabled (default 15);
- */
-inline int maxRetries() {
-    const char* retries = std::getenv("SOUFFLE_MAX_RETRIES");
-    return retries ? std::stoi(retries) : 15;
-}
-
-/**
- * A utility function to determine whether transaction-profiling is enabled or
- * disabled;
- */
-inline bool isTransactionProfilingEnabled() {
-    const static bool res = std::getenv("SOUFFLE_PROFILE_TRANSACTIONS");
-    return res;
 }
 
 // -------------------------------------------------------------------------------
@@ -1359,12 +1348,16 @@ public:
     void access(const T& val) {
         // test whether it is contained
         for (std::size_t i = 0; i < size; i++) {
-            if (entries[i] != val) continue;
+            if (entries[i] != val) {
+                continue;
+            }
 
             // -- move this one to the front --
 
             // if it is the first, nothing to handle
-            if (i == first) return;
+            if (i == first) {
+                return;
+            }
 
             // if this is the last, just first and last need to change
             if (i == last) {
@@ -1427,7 +1420,9 @@ template <typename T, unsigned size>
 std::ostream& operator<<(std::ostream& out, const LRUCache<T, size>& cache) {
     bool first = true;
     cache.forEachInOrder([&](const T& val) {
-        if (!first) out << ",";
+        if (!first) {
+            out << ",";
+        }
         first = false;
         out << val;
         return false;
@@ -1526,7 +1521,7 @@ public:
  * disabled;
  */
 inline bool isHintsProfilingEnabled() {
-    return std::getenv("SOUFFLE_PROFILE_HINTS");
+    return std::getenv("SOUFFLE_PROFILE_HINTS") != nullptr;
 }
 
 /**
@@ -1545,11 +1540,15 @@ public:
               misses((active) ? other.getMisses() : 0) {}
 
     void addHit() {
-        if (active) hits.fetch_add(1, std::memory_order_relaxed);
+        if (active) {
+            hits.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     void addMiss() {
-        if (active) misses.fetch_add(1, std::memory_order_relaxed);
+        if (active) {
+            misses.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     std::size_t getHits() const {

@@ -190,7 +190,7 @@ void collectContent(const AstComponent& component, const TypeBinding& binding,
     // start with relations and clauses of the base components
     for (const auto& base : component.getBaseComponents()) {
         const AstComponent* comp = componentLookup.getComponent(enclosingComponent, base->getName(), binding);
-        if (comp) {
+        if (comp != nullptr) {
             // link formal with actual type parameters
             const auto& formalParams = comp->getComponentType()->getTypeParameters();
             const auto& actualParams = base->getTypeParameters();
@@ -310,7 +310,7 @@ void collectContent(const AstComponent& component, const TypeBinding& binding,
     for (const auto& cur : component.getClauses()) {
         if (overridden.count(cur->getHead()->getName().getNames()[0]) == 0) {
             AstRelation* rel = index[cur->getHead()->getName()];
-            if (rel) {
+            if (rel != nullptr) {
                 rel->addClause(std::unique_ptr<AstClause>(cur->clone()));
             } else {
                 orphans.emplace_back(cur->clone());
@@ -322,7 +322,7 @@ void collectContent(const AstComponent& component, const TypeBinding& binding,
     for (auto iter = orphans.begin(); iter != orphans.end();) {
         auto& cur = *iter;
         AstRelation* rel = index[cur->getHead()->getName()];
-        if (rel) {
+        if (rel != nullptr) {
             // add orphan to current instance and delete from orphan list
             rel->addClause(std::unique_ptr<AstClause>(cur->clone()));
             iter = orphans.erase(iter);
@@ -347,7 +347,7 @@ ComponentContent getInstantiatedContent(const AstComponentInit& componentInit,
     // get referenced component
     const AstComponent* component = componentLookup.getComponent(
             enclosingComponent, componentInit.getComponentType()->getName(), binding);
-    if (!component) {
+    if (component == nullptr) {
         // this component is not defined => will trigger a semantic error
         return res;
     }

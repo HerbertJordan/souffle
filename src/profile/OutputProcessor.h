@@ -277,7 +277,7 @@ Table inline OutputProcessor::getVersions(std::string strRel, std::string strRul
 
     std::shared_ptr<Relation> rel;
     for (auto& current : relationMap) {
-        if (current.second->getId().compare(strRel) == 0) {
+        if (current.second->getId() == strRel) {
             rel = current.second;
             break;
         }
@@ -290,7 +290,7 @@ Table inline OutputProcessor::getVersions(std::string strRel, std::string strRul
     for (auto& iter : rel->getIterations()) {
         for (auto& current : iter->getRules()) {
             std::shared_ptr<Rule> rule = current.second;
-            if (rule->getId().compare(strRul) == 0) {
+            if (rule->getId() == strRul) {
                 std::string strTemp =
                         rule->getName() + rule->getLocator() + std::to_string(rule->getVersion());
 
@@ -346,7 +346,7 @@ Table inline OutputProcessor::getVersionAtoms(std::string strRel, std::string sr
     std::shared_ptr<Relation> rel;
 
     for (auto& current : relationMap) {
-        if (current.second->getId().compare(strRel) == 0) {
+        if (current.second->getId() == strRel) {
             rel = current.second;
             break;
         }
@@ -358,7 +358,7 @@ Table inline OutputProcessor::getVersionAtoms(std::string strRel, std::string sr
     for (auto& iter : rel->getIterations()) {
         for (auto& current : iter->getRules()) {
             std::shared_ptr<Rule> rule = current.second;
-            if (rule->getLocator().compare(srcLocator) == 0 && rule->getVersion() == version) {
+            if (rule->getLocator() == srcLocator && rule->getVersion() == version) {
                 for (auto& atom : rule->getAtoms()) {
                     Row row(4);
                     row[0] = std::make_shared<Cell<std::string>>(atom.rule);

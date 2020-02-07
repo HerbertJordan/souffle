@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "AstArgument.h"
+#include "AstAbstract.h"
 #include "AstNode.h"
 #include "AstRelationIdentifier.h"
 #include "BinaryConstraintOps.h"
@@ -30,29 +30,15 @@
 #include <utility>
 #include <vector>
 
+#include "AstAbstract.h"
+#include "AstNode.h"
+
 namespace souffle {
 
 class AstRelation;
 class AstClause;
 class AstProgram;
 class AstAtom;
-
-/**
- * Intermediate representation of atoms, binary relations,
- * and negated atoms in the body and head of a clause.
- */
-class AstLiteral : public AstNode {
-public:
-    AstLiteral() = default;
-
-    ~AstLiteral() override = default;
-
-    /** Obtains the atom referenced by this literal - if any */
-    virtual const AstAtom* getAtom() const = 0;
-
-    /** Creates a clone of this AST sub-structure */
-    AstLiteral* clone() const override = 0;
-};
 
 /**
  * Subclass of Literal that represents the use of a relation
@@ -62,8 +48,6 @@ public:
 class AstAtom : public AstLiteral {
 public:
     AstAtom(AstRelationIdentifier name = AstRelationIdentifier()) : name(std::move(name)) {}
-
-    ~AstAtom() override = default;
 
     /** Return the name of this atom */
     const AstRelationIdentifier& getName() const {
@@ -110,7 +94,6 @@ public:
         return arguments.size();
     }
 
-    /** Output to a given stream */
     void print(std::ostream& os) const override {
         os << getName() << "(";
 
@@ -127,7 +110,6 @@ public:
         os << ")";
     }
 
-    /** Creates a clone of this AST sub-structure */
     AstAtom* clone() const override {
         auto res = new AstAtom(name);
         res->setSrcLoc(getSrcLoc());
@@ -137,14 +119,12 @@ public:
         return res;
     }
 
-    /** Mutates this node */
     void apply(const AstNodeMapper& map) override {
         for (auto& arg : arguments) {
             arg = map(std::move(arg));
         }
     }
 
-    /** Obtains a list of all embedded child nodes */
     std::vector<const AstNode*> getChildNodes() const override {
         std::vector<const AstNode*> res;
         for (auto& cur : arguments) {
@@ -154,18 +134,17 @@ public:
     }
 
 protected:
-    /** Name of the atom */
-    AstRelationIdentifier name;
-
-    /** Arguments of the atom */
-    std::vector<std::unique_ptr<AstArgument>> arguments;
-
-    /** Implements the node comparison for this node type */
     bool equal(const AstNode& node) const override {
         assert(nullptr != dynamic_cast<const AstAtom*>(&node));
         const auto& other = static_cast<const AstAtom&>(node);
         return name == other.name && equal_targets(arguments, other.arguments);
     }
+
+    /** Name of the atom */
+    AstRelationIdentifier name;
+
+    /** Arguments of the atom */
+    std::vector<std::unique_ptr<AstArgument>> arguments;
 };
 
 /**
@@ -175,8 +154,6 @@ protected:
 class AstNegation : public AstLiteral {
 public:
     AstNegation(std::unique_ptr<AstAtom> atom) : atom(std::move(atom)) {}
-
-    ~AstNegation() override = default;
 
     /** Returns the nested atom as the referenced atom */
     const AstAtom* getAtom() const override {
@@ -212,15 +189,14 @@ public:
     }
 
 protected:
-    /** A pointer to the negated Atom */
-    std::unique_ptr<AstAtom> atom;
-
-    /** Implements the node comparison for this node type */
     bool equal(const AstNode& node) const override {
         assert(nullptr != dynamic_cast<const AstNegation*>(&node));
         const auto& other = static_cast<const AstNegation&>(node);
         return *atom == *other.atom;
     }
+
+    /** A pointer to the negated Atom */
+    std::unique_ptr<AstAtom> atom;
 };
 
 /**
@@ -233,8 +209,6 @@ class AstProvenanceNegation : public AstLiteral {
 public:
     AstProvenanceNegation(std::unique_ptr<AstAtom> atom) : atom(std::move(atom)) {}
 
-    ~AstProvenanceNegation() override = default;
-
     /** Returns the nested atom as the referenced atom */
     const AstAtom* getAtom() const override {
         return atom.get();
@@ -245,39 +219,34 @@ public:
         return atom.get();
     }
 
-    /** Output to a given stream */
     void print(std::ostream& os) const override {
         os << "prov!";
         atom->print(os);
     }
 
-    /** Creates a clone if this AST sub-structure */
     AstProvenanceNegation* clone() const override {
         auto* res = new AstProvenanceNegation(std::unique_ptr<AstAtom>(atom->clone()));
         res->setSrcLoc(getSrcLoc());
         return res;
     }
 
-    /** Mutates this node */
     void apply(const AstNodeMapper& map) override {
         atom = map(std::move(atom));
     }
 
-    /** Obtains a list of all embedded child nodes */
     std::vector<const AstNode*> getChildNodes() const override {
         return {atom.get()};
     }
 
 protected:
-    /** A pointer to the negated Atom */
-    std::unique_ptr<AstAtom> atom;
-
-    /** Implements the node comparison for this node type */
     bool equal(const AstNode& node) const override {
         assert(dynamic_cast<const AstProvenanceNegation*>(&node));
         const auto& other = static_cast<const AstProvenanceNegation&>(node);
         return *atom == *other.atom;
     }
+
+    /** A pointer to the negated Atom */
+    std::unique_ptr<AstAtom> atom;
 };
 
 /**
@@ -285,8 +254,6 @@ protected:
  */
 class AstConstraint : public AstLiteral {
 public:
-    ~AstConstraint() override = default;
-
     const AstAtom* getAtom() const override {
         // This kind of literal has no nested atom
         return nullptr;
@@ -301,12 +268,12 @@ public:
 /**
  * Subclass of Constraint that represents a constant 'true'
  * or 'false' value.
+ *
+ * TODO (b-scholz): Let's make two separate classes AstTrue/AstFalse
  */
 class AstBooleanConstraint : public AstConstraint {
 public:
     AstBooleanConstraint(bool truthValue) : truthValue(truthValue) {}
-
-    ~AstBooleanConstraint() override = default;
 
     bool isTrue() const {
         return truthValue;
@@ -326,22 +293,15 @@ public:
         return res;
     }
 
-    /** No nested nodes to apply to */
-    void apply(const AstNodeMapper& /*mapper*/) override {}
-
-    /** No nested child nodes */
-    std::vector<const AstNode*> getChildNodes() const override {
-        return std::vector<const AstNode*>();
-    }
-
 protected:
-    bool truthValue;
-
     bool equal(const AstNode& node) const override {
         assert(nullptr != dynamic_cast<const AstBooleanConstraint*>(&node));
         const auto& other = static_cast<const AstBooleanConstraint&>(node);
         return truthValue == other.truthValue;
     }
+
+    /** Truth value */
+    bool truthValue;
 };
 
 /**
@@ -357,8 +317,6 @@ public:
     AstBinaryConstraint(
             const std::string& op, std::unique_ptr<AstArgument> ls, std::unique_ptr<AstArgument> rs)
             : operation(toBinaryConstraintOp(op)), lhs(std::move(ls)), rhs(std::move(rs)) {}
-
-    ~AstBinaryConstraint() override = default;
 
     /** Return LHS argument */
     AstArgument* getLHS() const {
@@ -386,23 +344,21 @@ public:
     }
 
     /** Check whether constraint is a numeric constraint */
-    const bool isNumerical() const {
+    bool isNumerical() const {
         return isNumericBinaryConstraintOp(operation);
     }
 
     /** Check whether constraint is a symbolic constraint */
-    const bool isSymbolic() const {
+    bool isSymbolic() const {
         return isSymbolicBinaryConstraintOp(operation);
     }
 
-    /** Output the constraint to a given stream */
     void print(std::ostream& os) const override {
         lhs->print(os);
         os << " " << toBinaryConstraintSymbol(operation) << " ";
         rhs->print(os);
     }
 
-    /** Creates a clone of this AST sub-structure */
     AstBinaryConstraint* clone() const override {
         auto* res = new AstBinaryConstraint(operation, std::unique_ptr<AstArgument>(lhs->clone()),
                 std::unique_ptr<AstArgument>(rhs->clone()));
@@ -410,18 +366,22 @@ public:
         return res;
     }
 
-    /** Mutates this node */
     void apply(const AstNodeMapper& map) override {
         lhs = map(std::move(lhs));
         rhs = map(std::move(rhs));
     }
 
-    /** Obtains a list of all embedded child nodes */
     std::vector<const AstNode*> getChildNodes() const override {
         return {lhs.get(), rhs.get()};
     }
 
 protected:
+    bool equal(const AstNode& node) const override {
+        assert(nullptr != dynamic_cast<const AstBinaryConstraint*>(&node));
+        const auto& other = static_cast<const AstBinaryConstraint&>(node);
+        return operation == other.operation && *lhs == *other.lhs && *rhs == *other.rhs;
+    }
+
     /** The operator in this relation */
     BinaryConstraintOp operation;
 
@@ -430,13 +390,6 @@ protected:
 
     /** Right-hand side argument of a binary operation */
     std::unique_ptr<AstArgument> rhs;
-
-    /** Implements the node comparison for this node type */
-    bool equal(const AstNode& node) const override {
-        assert(nullptr != dynamic_cast<const AstBinaryConstraint*>(&node));
-        const auto& other = static_cast<const AstBinaryConstraint&>(node);
-        return operation == other.operation && *lhs == *other.lhs && *rhs == *other.rhs;
-    }
 };
 
 }  // end of namespace souffle

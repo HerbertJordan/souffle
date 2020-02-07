@@ -31,6 +31,7 @@ namespace souffle {
  *
  *          problem.graph.edge
  *
+ * TODO (b-scholz): find better name (qualified name etc)
  */
 class AstRelationIdentifier {
 public:

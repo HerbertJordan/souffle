@@ -6,7 +6,7 @@
 
 SUBDIRS = interface/functors
 
-EXTRA_DIST =  $(srcdir)/*.at package.m4 $(TESTSUITE) atlocal.in $(srcdir)/evaluation $(srcdir)/semantic $(srcdir)/syntactic $(srcdir)/interface $(srcdir)/profile $(srcdir)/provenance
+EXTRA_DIST =  $(srcdir)/*.at package.m4 $(TESTSUITE) atlocal.in $(srcdir)/swig $(srcdir)/evaluation $(srcdir)/semantic $(srcdir)/syntactic $(srcdir)/interface $(srcdir)/profile $(srcdir)/provenance
 
 package.m4: $(top_srcdir)/configure.ac
 	@{                                      \
@@ -36,6 +36,6 @@ distclean-local:
 	rm -f atconfig
 
 AUTOTEST = $(AUTOM4TE) --language=autotest
-$(TESTSUITE): $(srcdir)/testsuite.at $(srcdir)/syntactic.at $(srcdir)/semantic.at $(srcdir)/evaluation.at $(srcdir)/interface.at $(srcdir)/profile.at $(srcdir)/provenance.at $(srcdir)/fastevaluation.at package.m4
+$(TESTSUITE): $(srcdir)/swig.at $(srcdir)/testsuite.at $(srcdir)/syntactic.at $(srcdir)/semantic.at $(srcdir)/evaluation.at $(srcdir)/interface.at $(srcdir)/profile.at $(srcdir)/provenance.at $(srcdir)/fastevaluation.at package.m4
 	$(AUTOTEST) -I '$(srcdir)' -o $@.tmp $@.at
 	mv $@.tmp $@

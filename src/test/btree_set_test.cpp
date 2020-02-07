@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <unordered_set>
@@ -235,7 +236,10 @@ TEST(BTreeSet, Shuffled) {
     for (int i = 0; i < N; i++) {
         data.push_back(i);
     }
-    random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     for (int i = 0; i < N; i++) {
         t.insert(data[i]);
@@ -259,7 +263,10 @@ TEST(BTreeSet, Copy) {
     for (int i = 0; i < N; i++) {
         data.push_back(i);
     }
-    random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     for (int i = 0; i < N; i++) {
         t.insert(data[i]);
@@ -319,15 +326,6 @@ TEST(BTreeSet, Merge) {
     test_set d = b;
 
     EXPECT_NE(c, d);
-
-    c.insertAll(b);
-    d.insertAll(a);
-
-    EXPECT_EQ(5, c.size());
-    EXPECT_EQ(c, d);
-
-    c.insertAll(a);
-    EXPECT_EQ(c, d);
 }
 
 TEST(BTreeSet, IteratorEmpty) {
@@ -373,7 +371,10 @@ TEST(BTreeSet, IteratorStress) {
     for (int i = 0; i < N; i++) {
         data.push_back(i);
     }
-    random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     int max = -1;
     for (int i = 0; i < N; i++) {
@@ -510,8 +511,8 @@ TEST(BTreeSet, ChunkSplit) {
     //        EXPECT_EQ(20, chunks.size());
 
     for (const auto& cur : chunks) {
-        for (auto i = cur.begin(); i != cur.end(); ++i) {
-            std::cout << *i << ", ";
+        for (int i : cur) {
+            std::cout << i << ", ";
         }
         std::cout << "\n";
     }
@@ -534,7 +535,10 @@ TEST(BTreeSet, ChunkSplitStress) {
         for (int j = 0; j < i; j++) {
             data.push_back(j);
         }
-        random_shuffle(data.begin(), data.end());
+        std::random_device rd;
+        std::mt19937 generator(rd());
+
+        shuffle(data.begin(), data.end(), generator);
 
         // fill tree
         test_set t;
@@ -571,7 +575,10 @@ std::vector<Entry> getData(unsigned numEntries) {
     for (unsigned i = 0; i < numEntries; i++) {
         res[k++] = Entry(i / 100, i % 100);
     }
-    random_shuffle(res.begin(), res.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(res.begin(), res.end(), generator);
     return res;
 }
 
@@ -740,7 +747,10 @@ TEST(BTreeSet, Parallel) {
         }
 
         // shuffle data
-        std::random_shuffle(full.begin(), full.end());
+        std::random_device rd;
+        std::mt19937 generator(rd());
+
+        std::shuffle(full.begin(), full.end(), generator);
 
         // now insert all those values into a new set - in parallel
         btree_set<entry_t> res;
@@ -802,8 +812,11 @@ TEST(BTreeSet, ParallelScaling) {
         data.push_back(i);
     }
     std::vector<int> data2 = data;
-    random_shuffle(data.begin(), data.end());
-    random_shuffle(data2.begin(), data2.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    std::shuffle(data.begin(), data.end(), generator);
+    std::shuffle(data2.begin(), data2.end(), generator);
 
     for (int i = 1; i <= 8; i++) {
         test_set t;

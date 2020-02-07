@@ -121,42 +121,6 @@ void MinIndexSelection::solve() {
         return;
     }
 
-    // check whether one of the naive indexers should be used
-    // two conditions: either set by environment or relation is a hash map
-    static const char ENV_NAIVE_INDEX[] = "SOUFFLE_USE_NAIVE_INDEX";
-    if (std::getenv(ENV_NAIVE_INDEX)) {
-        static bool first = true;
-        // print a warning - only the first time
-        if (first) {
-            std::cout << "WARNING: auto index selection disabled, naive indexes are utilized!!\n";
-            first = false;
-        }
-
-        // every search pattern gets its naive index
-        for (SearchSignature cur : searches) {
-            // obtain order
-            LexOrder order;
-            SearchSignature mask = cur;
-            for (int i = 0; mask != 0; i++) {
-                if (!(1 << i & mask)) {
-                    continue;
-                }
-                order.push_back(i);
-                // clear bit
-                mask &= ~(1 << i);
-            }
-
-            // add new order
-            orders.push_back(order);
-
-            // register pseudo chain
-            chainToOrder.push_back(Chain());
-            chainToOrder.back().insert(cur);
-        }
-
-        return;
-    }
-
     // Construct the matching poblem
     for (auto search : searches) {
         // For this node check if other nodes are strict subsets
@@ -274,7 +238,7 @@ void RamIndexAnalysis::run(const RamTranslationUnit& translationUnit) {
     // 0-arity relation in a provenance program still need to be revisited.
 
     // visit all nodes to collect searches of each relation
-    visitDepthFirst(*translationUnit.getProgram(), [&](const RamNode& node) {
+    visitDepthFirst(translationUnit.getProgram(), [&](const RamNode& node) {
         if (const auto* indexSearch = dynamic_cast<const RamIndexOperation*>(&node)) {
             MinIndexSelection& indexes = getIndexes(indexSearch->getRelation());
             indexes.addSearch(getSearchSignature(indexSearch));
@@ -291,7 +255,7 @@ void RamIndexAnalysis::run(const RamTranslationUnit& translationUnit) {
     });
 
     // A swap happen between rel A and rel B indicates A should include all indices of B, vice versa.
-    visitDepthFirst(*translationUnit.getProgram(), [&](const RamSwap& swap) {
+    visitDepthFirst(translationUnit.getProgram(), [&](const RamSwap& swap) {
         // Note: this naive approach will not work if there exists chain or cyclic swapping.
         // e.g.  swap(relA, relB) swap(relB, relC) swap(relC, relA)
         // One need to keep merging the search set until a fixed point where no more index is introduced
@@ -341,7 +305,6 @@ MinIndexSelection& RamIndexAnalysis::getIndexes(const RamRelation& rel) {
 }
 
 void RamIndexAnalysis::print(std::ostream& os) const {
-    os << "------ Auto-Index-Generation Report -------\n";
     for (auto& cur : minIndexCover) {
         const RamRelation& rel = *cur.first;
         const MinIndexSelection& indexes = cur.second;
@@ -349,14 +312,17 @@ void RamIndexAnalysis::print(std::ostream& os) const {
 
         /* Print searches */
         os << "Relation " << relName << "\n";
-        os << "\tNumber of Search Patterns: " << indexes.getSearches().size() << "\n";
+        os << "\tNumber of Primitive Searches: " << indexes.getSearches().size() << "\n";
+
+        const auto& attrib = rel.getAttributeNames();
+        uint32_t arity = rel.getArity();
 
         /* print searches */
         for (auto& cols : indexes.getSearches()) {
             os << "\t\t";
-            for (uint32_t i = 0; i < rel.getArity(); i++) {
-                if ((1UL << i) & cols) {
-                    os << rel.getArg(i) << " ";
+            for (uint32_t i = 0; i < arity; i++) {
+                if (((1UL << i) & cols) != 0u) {
+                    os << attrib[i] << " ";
                 }
             }
             os << "\n";
@@ -366,12 +332,11 @@ void RamIndexAnalysis::print(std::ostream& os) const {
         for (auto& order : indexes.getAllOrders()) {
             os << "\t\t";
             for (auto& i : order) {
-                os << rel.getArg(i) << " ";
+                os << attrib[i] << " ";
             }
             os << "\n";
         }
     }
-    os << "------ End of Auto-Index-Generation Report -------\n";
 }
 
 SearchSignature RamIndexAnalysis::getSearchSignature(const RamIndexOperation* search) const {
@@ -389,8 +354,9 @@ SearchSignature RamIndexAnalysis::getSearchSignature(
         const RamProvenanceExistenceCheck* provExistCheck) const {
     const auto values = provExistCheck->getValues();
     SearchSignature res = 0;
-    // values.size() - 1 because we discard the height annotation
-    for (int i = 0; i < (int)values.size() - 1; i++) {
+    auto auxiliaryArity = provExistCheck->getRelation().getAuxiliaryArity();
+    // values.size() - auxiliaryArity because we discard the height annotations
+    for (size_t i = 0; i < values.size() - auxiliaryArity; i++) {
         if (!isRamUndefValue(values[i])) {
             res |= (1 << i);
         }

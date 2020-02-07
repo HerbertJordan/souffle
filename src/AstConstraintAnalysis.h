@@ -102,7 +102,7 @@ protected:
      */
     AnalysisVar getVar(const AstArgument& arg) {
         const auto* var = dynamic_cast<const AstVariable*>(&arg);
-        if (!var) {
+        if (var == nullptr) {
             // no mapping required
             return AnalysisVar(arg);
         }

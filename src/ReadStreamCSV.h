@@ -36,12 +36,12 @@ namespace souffle {
 
 class ReadStreamCSV : public ReadStream {
 public:
-    ReadStreamCSV(std::istream& file, const std::vector<bool>& symbolMask, SymbolTable& symbolTable,
-            const IODirectives& ioDirectives, const bool provenance = false)
-            : ReadStream(symbolMask, symbolTable, provenance), delimiter(getDelimiter(ioDirectives)),
+    ReadStreamCSV(std::istream& file, const std::vector<RamTypeAttribute>& symbolMask,
+            SymbolTable& symbolTable, const IODirectives& ioDirectives, const size_t auxiliaryArity = 0)
+            : ReadStream(symbolMask, symbolTable, auxiliaryArity), delimiter(getDelimiter(ioDirectives)),
               file(file), lineNumber(0), inputMap(getInputColumnMap(ioDirectives, arity)) {
         while (inputMap.size() < arity) {
-            int size = inputMap.size();
+            int size = static_cast<int>(inputMap.size());
             inputMap[size] = size;
         }
     }
@@ -90,21 +90,28 @@ protected:
                 continue;
             }
             ++columnsFilled;
-            if (symbolMask.at(inputMap[column])) {
-                tuple[inputMap[column]] = symbolTable.unsafeLookup(element);
-            } else {
-                try {
-#if RAM_DOMAIN_SIZE == 64
-                    tuple[inputMap[column]] = std::stoll(element);
-#else
-                    tuple[inputMap[column]] = std::stoi(element);
-#endif
-                } catch (...) {
-                    std::stringstream errorMessage;
-                    errorMessage << "Error converting number <" + element + "> in column " << column + 1
-                                 << " in line " << lineNumber << "; ";
-                    throw std::invalid_argument(errorMessage.str());
+
+            try {
+                switch (symbolMask.at(inputMap[column])) {
+                    case RamTypeAttribute::Symbol:
+                        tuple[inputMap[column]] = symbolTable.unsafeLookup(element);
+                        break;
+                    case RamTypeAttribute::Record:  // What should be done here?
+                    case RamTypeAttribute::Signed:
+                        tuple[inputMap[column]] = RamDomainFromString(element);
+                        break;
+                    case RamTypeAttribute::Unsigned:
+                        tuple[inputMap[column]] = ramBitCast(RamUnsignedFromString(element));
+                        break;
+                    case RamTypeAttribute::Float:
+                        tuple[inputMap[column]] = ramBitCast(RamFloatFromString(element));
+                        break;
                 }
+            } catch (...) {
+                std::stringstream errorMessage;
+                errorMessage << "Error converting number <" + element + "> in column " << column + 1
+                             << " in line " << lineNumber << "; ";
+                throw std::invalid_argument(errorMessage.str());
             }
         }
 
@@ -118,30 +125,30 @@ protected:
         return "\t";
     }
 
-    std::map<int, int> getInputColumnMap(const IODirectives& ioDirectives, const unsigned arity) const {
+    std::map<int, int> getInputColumnMap(const IODirectives& ioDirectives, const unsigned arity_) const {
         std::string columnString = "";
         if (ioDirectives.has("columns")) {
             columnString = ioDirectives.get("columns");
         }
-        std::map<int, int> inputMap;
+        std::map<int, int> inputColumnMap;
 
         if (!columnString.empty()) {
             std::istringstream iss(columnString);
             std::string mapping;
             int index = 0;
             while (std::getline(iss, mapping, ':')) {
-                inputMap[stoi(mapping)] = index++;
+                inputColumnMap[stoi(mapping)] = index++;
             }
-            if (inputMap.size() < arity) {
+            if (inputColumnMap.size() < arity_) {
                 throw std::invalid_argument("Invalid column set was given: <" + columnString + ">");
             }
         } else {
-            while (inputMap.size() < arity) {
-                int size = inputMap.size();
-                inputMap[size] = size;
+            while (inputColumnMap.size() < arity_) {
+                int size = static_cast<int>(inputColumnMap.size());
+                inputColumnMap[size] = size;
             }
         }
-        return inputMap;
+        return inputColumnMap;
     }
 
     const std::string delimiter;
@@ -152,9 +159,9 @@ protected:
 
 class ReadFileCSV : public ReadStreamCSV {
 public:
-    ReadFileCSV(const std::vector<bool>& symbolMask, SymbolTable& symbolTable,
-            const IODirectives& ioDirectives, const bool provenance = false)
-            : ReadStreamCSV(fileHandle, symbolMask, symbolTable, ioDirectives, provenance),
+    ReadFileCSV(const std::vector<RamTypeAttribute>& symbolMask, SymbolTable& symbolTable,
+            const IODirectives& ioDirectives, const size_t auxiliaryArity = 0)
+            : ReadStreamCSV(fileHandle, symbolMask, symbolTable, ioDirectives, auxiliaryArity),
               baseName(souffle::baseName(getFileName(ioDirectives))),
               fileHandle(getFileName(ioDirectives), std::ios::in | std::ios::binary) {
         if (!ioDirectives.has("intermediate")) {
@@ -204,9 +211,11 @@ protected:
 
 class ReadCinCSVFactory : public ReadStreamFactory {
 public:
-    std::unique_ptr<ReadStream> getReader(const std::vector<bool>& symbolMask, SymbolTable& symbolTable,
-            const IODirectives& ioDirectives, const bool provenance) override {
-        return std::make_unique<ReadStreamCSV>(std::cin, symbolMask, symbolTable, ioDirectives, provenance);
+    std::unique_ptr<ReadStream> getReader(const std::vector<RamTypeAttribute>& symbolMask,
+            SymbolTable& symbolTable, const IODirectives& ioDirectives,
+            const size_t auxiliaryArity) override {
+        return std::make_unique<ReadStreamCSV>(
+                std::cin, symbolMask, symbolTable, ioDirectives, auxiliaryArity);
     }
     const std::string& getName() const override {
         static const std::string name = "stdin";
@@ -217,9 +226,10 @@ public:
 
 class ReadFileCSVFactory : public ReadStreamFactory {
 public:
-    std::unique_ptr<ReadStream> getReader(const std::vector<bool>& symbolMask, SymbolTable& symbolTable,
-            const IODirectives& ioDirectives, const bool provenance) override {
-        return std::make_unique<ReadFileCSV>(symbolMask, symbolTable, ioDirectives, provenance);
+    std::unique_ptr<ReadStream> getReader(const std::vector<RamTypeAttribute>& symbolMask,
+            SymbolTable& symbolTable, const IODirectives& ioDirectives,
+            const size_t auxiliaryArity) override {
+        return std::make_unique<ReadFileCSV>(symbolMask, symbolTable, ioDirectives, auxiliaryArity);
     }
     const std::string& getName() const override {
         static const std::string name = "file";

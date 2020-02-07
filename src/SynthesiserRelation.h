@@ -45,6 +45,10 @@ public:
         return computedIndices;
     }
 
+    std::set<int> getProvenenceIndexNumbers() const {
+        return provenanceIndexNumbers;
+    }
+
     /** Get stored MinIndexSelection */
     const MinIndexSelection& getMinIndexSelection() const {
         return indices;
@@ -78,6 +82,9 @@ protected:
     /** The final list of indices used */
     MinIndexSelection::OrderCollection computedIndices;
 
+    /** The list of indices added for provenance computation */
+    std::set<int> provenanceIndexNumbers;
+
     /** The number of the master index */
     size_t masterIndex = -1;
 
@@ -89,6 +96,16 @@ class SynthesiserNullaryRelation : public SynthesiserRelation {
 public:
     SynthesiserNullaryRelation(
             const RamRelation& ramRel, const MinIndexSelection& indexSet, bool isProvenance)
+            : SynthesiserRelation(ramRel, indexSet, isProvenance) {}
+
+    void computeIndices() override;
+    std::string getTypeName() override;
+    void generateTypeStruct(std::ostream& out) override;
+};
+
+class SynthesiserInfoRelation : public SynthesiserRelation {
+public:
+    SynthesiserInfoRelation(const RamRelation& ramRel, const MinIndexSelection& indexSet, bool isProvenance)
             : SynthesiserRelation(ramRel, indexSet, isProvenance) {}
 
     void computeIndices() override;
@@ -136,5 +153,4 @@ public:
     std::string getTypeName() override;
     void generateTypeStruct(std::ostream& out) override;
 };
-
 }  // end of namespace souffle

@@ -44,7 +44,7 @@ struct scanner_data {
     SrcLocation yylloc;
 
     /* Stack of parsed files */
-    const char* yyfilename = nullptr;
+    std::string yyfilename;
 };
 
 class ParserDriver {
@@ -76,8 +76,6 @@ public:
             SymbolTable& symbolTable, ErrorReport& errorReport, DebugReport& debugReport);
     static std::unique_ptr<AstTranslationUnit> parseTranslationUnit(const std::string& code,
             SymbolTable& symbolTable, ErrorReport& errorReport, DebugReport& debugReport);
-
-    bool trace_parsing = false;
 
     void error(const SrcLocation& loc, const std::string& msg);
     void error(const std::string& msg);

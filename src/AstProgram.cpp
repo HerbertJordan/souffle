@@ -21,6 +21,7 @@
 #include "AstFunctorDeclaration.h"
 #include "AstLiteral.h"
 #include "AstRelation.h"
+#include "AstType.h"
 #include "ErrorReport.h"
 #include "Util.h"
 #include <sstream>
@@ -239,7 +240,6 @@ void AstProgram::print(std::ostream& os) const {
 }
 
 AstProgram* AstProgram::clone() const {
-    // create copy
     auto res = new AstProgram();
 
     // move types
@@ -247,27 +247,38 @@ AstProgram* AstProgram::clone() const {
         res->types.insert(std::make_pair(cur.first, std::unique_ptr<AstType>(cur.second->clone())));
     }
 
-    // move relations
     for (const auto& cur : relations) {
         res->relations.insert(std::make_pair(cur.first, std::unique_ptr<AstRelation>(cur.second->clone())));
     }
 
-    // move components
+    for (const auto& cur : functors) {
+        res->functors.insert(
+                std::make_pair(cur.first, std::unique_ptr<AstFunctorDeclaration>(cur.second->clone())));
+    }
+
+    for (const auto& cur : clauses) {
+        res->clauses.emplace_back(cur->clone());
+    }
+    for (const auto& cur : loads) {
+        res->loads.emplace_back(cur->clone());
+    }
+    for (const auto& cur : printSizes) {
+        res->printSizes.emplace_back(cur->clone());
+    }
+    for (const auto& cur : stores) {
+        res->stores.emplace_back(cur->clone());
+    }
+
     for (const auto& cur : components) {
         res->components.emplace_back(cur->clone());
     }
 
-    // move component instantiations
     for (const auto& cur : instantiations) {
         res->instantiations.emplace_back(cur->clone());
     }
 
-    // move ioDirectives
-    for (const auto& cur : loads) {
-        res->loads.emplace_back(cur->clone());
-    }
-    for (const auto& cur : stores) {
-        res->stores.emplace_back(cur->clone());
+    for (const auto& cur : pragmaDirectives) {
+        res->pragmaDirectives.emplace_back(cur->clone());
     }
 
     ErrorReport errors;

@@ -55,14 +55,8 @@ protected:
     /** Convert RAM identifier */
     const std::string convertRamIdent(const std::string& name);
 
-    /** Check whether indexes are disabled */
-    bool areIndexesDisabled();
-
     /** Get relation name */
     const std::string getRelationName(const RamRelation& rel);
-
-    /** Get relation name */
-    const std::string getRelationName(const std::string& relName);
 
     /** Get context name */
     const std::string getOpContextName(const RamRelation& rel);

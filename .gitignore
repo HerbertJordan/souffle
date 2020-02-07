@@ -47,3 +47,8 @@ cmake-build-debug/
 
 stamp-h1
 /CMakeLists.txt
+
+/man/souffle-compile.1
+/man/souffle-config.1
+/man/souffle-profile.1
+/man/souffle.1

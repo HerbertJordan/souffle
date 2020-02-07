@@ -18,25 +18,23 @@
 
 #include "souffle/Brie.h"
 #include "souffle/CompiledIndexUtils.h"
-#include "souffle/CompiledOptions.h"
 #include "souffle/CompiledRecord.h"
-#include "souffle/CompiledRelation.h"
 #include "souffle/CompiledTuple.h"
 #include "souffle/IODirectives.h"
 #include "souffle/IOSystem.h"
-#include "souffle/Logger.h"
 #include "souffle/ParallelUtils.h"
-#include "souffle/ProfileEvent.h"
 #include "souffle/RamTypes.h"
 #include "souffle/SignalHandler.h"
 #include "souffle/SouffleInterface.h"
 #include "souffle/SymbolTable.h"
+#include "souffle/Table.h"
 #include "souffle/Util.h"
 #include "souffle/WriteStream.h"
-#ifdef USE_MPI
-#include "souffle/Mpi.h"
+#ifndef __EMBEDDED_SOUFFLE__
+#include "souffle/CompiledOptions.h"
+#include "souffle/Logger.h"
+#include "souffle/ProfileEvent.h"
 #endif
-
 #include <array>
 #include <atomic>
 #include <cassert>
@@ -66,8 +64,8 @@ inline souffle::SouffleProgram* getInstance(const char* p) {
 /**
  * Relation wrapper used internally in the generated Datalog program
  */
-template <uint32_t id, class RelType, class TupleType, size_t Arity>
-class RelationWrapper : public Relation {
+template <uint32_t id, class RelType, class TupleType, size_t Arity, size_t NumAuxAttributes>
+class RelationWrapper : public souffle::Relation {
 private:
     RelType& relation;
     SymbolTable& symTable;
@@ -116,6 +114,7 @@ public:
     }
     void insert(const tuple& arg) override {
         TupleType t;
+        assert(&arg.getRelation() == this && "wrong relation");
         assert(arg.size() == Arity && "wrong tuple arity");
         for (size_t i = 0; i < Arity; i++) {
             t[i] = arg[i];
@@ -137,15 +136,18 @@ public:
         return name;
     }
     const char* getAttrType(size_t arg) const override {
-        assert(false <= arg && arg < Arity && "attribute out of bound");
+        assert(arg < Arity && "attribute out of bound");
         return tupleType[arg];
     }
     const char* getAttrName(size_t arg) const override {
-        assert(false <= arg && arg < Arity && "attribute out of bound");
+        assert(arg < Arity && "attribute out of bound");
         return tupleName[arg];
     }
     size_t getArity() const override {
         return Arity;
+    }
+    size_t getAuxiliaryArity() const override {
+        return NumAuxAttributes;
     }
     SymbolTable& getSymbolTable() const override {
         return symTable;
@@ -209,12 +211,6 @@ public:
     void insert(const RamDomain* ramDomain) {
         data = true;
     }
-    template <typename T>
-    void insertAll(T& other) {
-        if (!other.empty()) {
-            insert();
-        }
-    }
     bool insert() {
         bool result = data;
         data = true;
@@ -234,6 +230,91 @@ public:
     }
     void purge() {
         data = false;
+    }
+    void printHintStatistics(std::ostream& o, std::string prefix) const {}
+};
+
+/** info relations */
+template <int Arity>
+class t_info {
+private:
+    std::vector<ram::Tuple<RamDomain, Arity>> data;
+    Lock insert_lock;
+
+public:
+    t_info() = default;
+    using t_tuple = ram::Tuple<RamDomain, Arity>;
+    struct context {};
+    context createContext() {
+        return context();
+    }
+    class iterator : public std::iterator<std::forward_iterator_tag, ram::Tuple<RamDomain, Arity>> {
+        typename std::vector<ram::Tuple<RamDomain, Arity>>::const_iterator it;
+
+    public:
+        iterator(const typename std::vector<t_tuple>::const_iterator& o) : it(o) {}
+
+        const t_tuple operator*() {
+            return *it;
+        }
+
+        bool operator==(const iterator& other) const {
+            return other.it == it || *other.it == *it;
+        }
+
+        bool operator!=(const iterator& other) const {
+            return !(*this == other);
+        }
+
+        iterator& operator++() {
+            it++;
+            return *this;
+        }
+    };
+    iterator begin() const {
+        return iterator(data.begin());
+    }
+    iterator end() const {
+        return iterator(data.end());
+    }
+    void insert(const t_tuple& t) {
+        insert_lock.lock();
+        if (!contains(t)) {
+            data.push_back(t);
+        }
+        insert_lock.unlock();
+    }
+    void insert(const t_tuple& t, context& /* ctxt */) {
+        insert(t);
+    }
+    void insert(const RamDomain* ramDomain) {
+        insert_lock.lock();
+        t_tuple t;
+        for (size_t i = 0; i < Arity; ++i) {
+            t.data[i] = ramDomain[i];
+        }
+        data.push_back(t);
+        insert_lock.unlock();
+    }
+    bool contains(const t_tuple& t) const {
+        for (const auto& o : data) {
+            if (t == o) {
+                return true;
+            }
+        }
+        return false;
+    }
+    bool contains(const t_tuple& t, context& /* ctxt */) const {
+        return contains(t);
+    }
+    std::size_t size() const {
+        return data.size();
+    }
+    bool empty() const {
+        return data.size() == 0;
+    }
+    void purge() {
+        data.clear();
     }
     void printHintStatistics(std::ostream& o, std::string prefix) const {}
 };

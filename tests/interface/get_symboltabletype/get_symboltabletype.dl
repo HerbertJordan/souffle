@@ -1,0 +1,8 @@
+.type first_name
+.type last_name
+.type gender
+
+.decl people (Surname:first_name, name:last_name, gender:gender, age:number, height:number)
+
+.input people ()
+.output people ()

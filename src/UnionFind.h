@@ -178,9 +178,13 @@ public:
             }
             // join the trees together
             // perhaps we can optimise the use of compare_exchange_strong here, as we're in a pessimistic loop
-            if (!updateRoot(x, xrank, y, yrank)) continue;
+            if (!updateRoot(x, xrank, y, yrank)) {
+                continue;
+            }
             // make sure that the ranks are orderable
-            if (xrank == yrank) updateRoot(y, yrank, y, yrank + 1);
+            if (xrank == yrank) {
+                updateRoot(y, yrank, y, yrank + 1);
+            }
             break;
         }
     }
@@ -230,12 +234,13 @@ public:
 template <typename StorePair>
 struct EqrelMapComparator {
     int operator()(const StorePair& a, const StorePair& b) {
-        if (a.first < b.first)
+        if (a.first < b.first) {
             return -1;
-        else if (b.first < a.first)
+        } else if (b.first < a.first) {
             return 1;
-        else
+        } else {
             return 0;
+        }
     }
 
     bool less(const StorePair& a, const StorePair& b) {

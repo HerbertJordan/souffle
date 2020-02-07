@@ -11,4 +11,8 @@ if [[ "$SOUFFLE_CATEGORY" != *"Unit"* ]]
 then
   cd tests
 fi
-TESTSUITEFLAGS="-j2 $TESTRANGE" make check -j2
+JOBS=$(nproc || sysctl -n hw.ncpu || echo 2)
+TESTSUITEFLAGS="-j$JOBS $TESTRANGE" make check -j$JOBS
+
+set +e
+set +x

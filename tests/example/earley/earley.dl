@@ -32,7 +32,7 @@ EndString(c + 1) :- String(c, _), !NotEndString(c).
 
 // Adapted from Earley parser - Wikipedia
 
-// Current parse position in the string is c, production x has been matched 
+// Current parse position in the string is c, production x has been matched
 // up to position p in the body starting at position j in the input string.
 .decl State			(c:Pos, x:Label, p:Pos, j:Pos)
 

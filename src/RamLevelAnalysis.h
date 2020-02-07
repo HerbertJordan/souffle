@@ -40,6 +40,8 @@ namespace souffle {
  */
 class RamLevelAnalysis : public RamAnalysis {
 public:
+    RamLevelAnalysis(const char* id) : RamAnalysis(id) {}
+
     static constexpr const char* name = "level-analysis";
 
     void run(const RamTranslationUnit& translationUnit) override {}

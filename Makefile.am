@@ -56,7 +56,6 @@ package:
 			--identifier com.oracle.souffle \
 			--version $(VERSION) \
 			--install-location /usr/local \
-			--scripts $(abs_top_srcdir)/osx \
 			$(abs_top_builddir)/$(distdir).pkg \
 		&& popd \
 		&& rm -rf $(distdir)

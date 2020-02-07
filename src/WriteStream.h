@@ -26,10 +26,10 @@ namespace souffle {
 
 class WriteStream {
 public:
-    WriteStream(const std::vector<bool>& symbolMask, const SymbolTable& symbolTable, const bool prov,
-            bool summary = false)
-            : symbolMask(symbolMask), symbolTable(symbolTable), isProvenance(prov), summary(summary),
-              arity(symbolMask.size() - (prov ? 2 : 0)) {}
+    WriteStream(const std::vector<RamTypeAttribute>& symbolMask, const SymbolTable& symbolTable,
+            const size_t auxiliaryArity, bool summary = false)
+            : symbolMask(symbolMask), symbolTable(symbolTable), summary(summary),
+              arity(symbolMask.size() - auxiliaryArity) {}
     template <typename T>
     void writeAll(const T& relation) {
         if (summary) {
@@ -55,27 +55,45 @@ public:
     virtual ~WriteStream() = default;
 
 protected:
-    const std::vector<bool>& symbolMask;
+    const std::vector<RamTypeAttribute>& symbolMask;
     const SymbolTable& symbolTable;
-    const bool isProvenance;
     const bool summary;
     const size_t arity;
 
     virtual void writeNullary() = 0;
     virtual void writeNextTuple(const RamDomain* tuple) = 0;
-    virtual void writeSize(std::size_t size) {
+    virtual void writeSize(std::size_t) {
         assert(false && "attempting to print size of a write operation");
     }
     template <typename Tuple>
     void writeNext(const Tuple tuple) {
         writeNextTuple(tuple.data);
     }
+    void writeNextTupleElement(std::ostream& destination, RamTypeAttribute type, RamDomain value) {
+        switch (type) {
+            case RamTypeAttribute::Symbol:
+                destination << symbolTable.unsafeResolve(value);
+                break;
+            case RamTypeAttribute::Signed:
+                destination << value;
+                break;
+            case RamTypeAttribute::Unsigned:
+                destination << ramBitCast<RamUnsigned>(value);
+                break;
+            case RamTypeAttribute::Float:
+                destination << ramBitCast<RamFloat>(value);
+                break;
+            case RamTypeAttribute::Record:
+                assert(false && "Record writing is not supported");
+        }
+    }
 };
 
 class WriteStreamFactory {
 public:
-    virtual std::unique_ptr<WriteStream> getWriter(const std::vector<bool>& symbolMask,
-            const SymbolTable& symbolTable, const IODirectives& ioDirectives, const bool provenance) = 0;
+    virtual std::unique_ptr<WriteStream> getWriter(const std::vector<RamTypeAttribute>& symbolMask,
+            const SymbolTable& symbolTable, const IODirectives& ioDirectives,
+            const size_t auxiliaryArity) = 0;
     virtual const std::string& getName() const = 0;
     virtual ~WriteStreamFactory() = default;
 };

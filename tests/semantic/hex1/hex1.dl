@@ -8,5 +8,12 @@
 .decl Hexadecimal (n:number)
 .output Hexadecimal
 
+Hexadecimal(0x1).
+
+#if RAM_DOMAIN_SIZE == 32
 Hexadecimal(0x00000000).
 Hexadecimal(0xFFFFFFFF).
+#elif RAM_DOMAIN_SIZE == 64
+Hexadecimal(0x0000000000000000).
+Hexadecimal(0xFFFFFFFFFFFFFFFF).
+#endif

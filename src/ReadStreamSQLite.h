@@ -31,8 +31,9 @@ namespace souffle {
 class ReadStreamSQLite : public ReadStream {
 public:
     ReadStreamSQLite(const std::string& dbFilename, const std::string& relationName,
-            const std::vector<bool>& symbolMask, SymbolTable& symbolTable, const bool provenance)
-            : ReadStream(symbolMask, symbolTable, provenance), dbFilename(dbFilename),
+            const std::vector<RamTypeAttribute>& symbolMask, SymbolTable& symbolTable,
+            const size_t auxiliaryArity)
+            : ReadStream(symbolMask, symbolTable, auxiliaryArity), dbFilename(dbFilename),
               relationName(relationName) {
         openDB();
         checkTableExists();
@@ -56,7 +57,7 @@ protected:
             return nullptr;
         }
 
-        std::unique_ptr<RamDomain[]> tuple = std::make_unique<RamDomain[]>(arity + (isProvenance ? 2 : 0));
+        std::unique_ptr<RamDomain[]> tuple = std::make_unique<RamDomain[]>(arity + auxiliaryArity);
 
         uint32_t column;
         for (column = 0; column < arity; column++) {
@@ -65,20 +66,23 @@ protected:
             if (element.empty()) {
                 element = "n/a";
             }
-            if (symbolMask.at(column)) {
-                tuple[column] = symbolTable.unsafeLookup(element);
-            } else {
-                try {
-#if RAM_DOMAIN_SIZE == 64
-                    tuple[column] = std::stoll(element);
-#else
-                    tuple[column] = std::stoi(element);
-#endif
-                } catch (...) {
-                    std::stringstream errorMessage;
-                    errorMessage << "Error converting number in column " << (column) + 1;
-                    throw std::invalid_argument(errorMessage.str());
+
+            try {
+                switch (symbolMask.at(column)) {
+                    case RamTypeAttribute::Symbol:
+                        tuple[column] = symbolTable.unsafeLookup(element);
+                        break;
+                    case RamTypeAttribute::Signed:
+                    case RamTypeAttribute::Unsigned:
+                    case RamTypeAttribute::Float:
+                    case RamTypeAttribute::Record:
+                        tuple[column] = RamDomainFromString(element);
+                        break;
                 }
+            } catch (...) {
+                std::stringstream errorMessage;
+                errorMessage << "Error converting number in column " << (column) + 1;
+                throw std::invalid_argument(errorMessage.str());
             }
         }
 
@@ -154,11 +158,13 @@ protected:
 
 class ReadSQLiteFactory : public ReadStreamFactory {
 public:
-    std::unique_ptr<ReadStream> getReader(const std::vector<bool>& symbolMask, SymbolTable& symbolTable,
-            const IODirectives& ioDirectives, const bool provenance) override {
+    std::unique_ptr<ReadStream> getReader(const std::vector<RamTypeAttribute>& symbolMask,
+            SymbolTable& symbolTable, const IODirectives& ioDirectives,
+            const size_t auxiliaryArity) override {
         std::string dbName = ioDirectives.get("dbname");
         std::string relationName = ioDirectives.getRelationName();
-        return std::make_unique<ReadStreamSQLite>(dbName, relationName, symbolMask, symbolTable, provenance);
+        return std::make_unique<ReadStreamSQLite>(
+                dbName, relationName, symbolMask, symbolTable, auxiliaryArity);
     }
     const std::string& getName() const override {
         static const std::string name = "sqlite";

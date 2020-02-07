@@ -195,6 +195,52 @@ public:
             // close file stream so that output is actually written to file
             printPrompt("Exiting explain\n");
             return false;
+        } else if (command[0] == "query") {
+            // if there is no given relations, return directly
+            if (command.size() != 2) {
+                printError(
+                        "Usage: query <relation1>(<element1>, <element2>, ...), "
+                        "<relation2>(<element1>, <element2>, ...), ...\n");
+                return true;
+            }
+            // vector relations stores relation name, args pair parsed by parseQueryTuple()
+            std::vector<std::pair<std::string, std::vector<std::string>>> relations;
+            // regex for relation string
+            std::regex relationRegex(
+                    "([a-zA-Z0-9_.-]*)[[:blank:]]*\\(([[:blank:]]*([0-9]+|\"[^\"]*\"|[a-zA-Z_][a-zA-Z_0-9]*)("
+                    "[[:blank:]]*,[[:blank:]]*(["
+                    "0-"
+                    "9]+|\"[^\"]*\"|[a-zA-Z_][a-zA-Z_0-9]*))*)?\\)",
+                    std::regex_constants::extended);
+            std::smatch relationMatcher;
+            std::smatch argsMatcher;
+            std::string relationStr = command[1];
+            // use relationRegex to match each relation string and call parseQueryTuple() to parse the
+            // relation name and arguments
+            while (std::regex_search(relationStr, relationMatcher, relationRegex)) {
+                relations.push_back(parseQueryTuple(relationMatcher[0]));
+
+                // check return value for parseQueryTuple, return if relation name is empty string or tuple
+                // arguments is empty
+                if (relations.back().first.size() == 0 || relations.back().second.size() == 0) {
+                    printError(
+                            "Usage: query <relation1>(<element1>, <element2>, ...), "
+                            "<relation2>(<element1>, <element2>, ...), ...\n");
+                    return true;
+                }
+                relationStr = relationMatcher.suffix().str();
+            }
+
+            // is no valid relation can be identified, return directly
+            if (relations.size() == 0) {
+                printError(
+                        "Usage: query <relation1>(<element1>, <element2>, ...), "
+                        "<relation2>(<element1>, <element2>, ...), ...\n");
+                return true;
+            }
+
+            // call queryProcess function to process query
+            prov.queryProcess(relations);
         } else {
             printError(
                     "\n----------\n"
@@ -210,6 +256,11 @@ public:
                     "output <filename>: Write output into a file, or provide empty filename to\n"
                     "    disable output\n"
                     "format <json|proof>: switch format between json and proof-trees\n"
+                    "query <relation1>(<element1>, <element2>, ...), <relation2>(<element1>, <element2>), "
+                    "... :\n"
+                    "check existence of constant tuples or find solutions for parameterised tuples\n"
+                    "for parameterised query, use semicolon to find next solution and dot to break from "
+                    "query\n"
                     "exit: Exits this interface\n\n");
         }
 
@@ -245,7 +296,7 @@ private:
 
         // regex for matching tuples
         // values matches numbers or strings enclosed in quotation marks
-        std::regex relRegex(
+        std::regex relationRegex(
                 "([a-zA-Z0-9_.-]*)[[:blank:]]*\\(([[:blank:]]*([0-9]+|\"[^\"]*\")([[:blank:]]*,[[:blank:]]*(["
                 "0-"
                 "9]+|\"[^\"]*\"))*)?\\)",
@@ -254,7 +305,7 @@ private:
 
         // first check that format matches correctly
         // and extract relation name
-        if (!std::regex_match(str, relMatch, relRegex) || relMatch.size() < 3) {
+        if (!std::regex_match(str, relMatch, relationRegex) || relMatch.size() < 3) {
             return std::make_pair(relName, args);
         }
 
@@ -266,6 +317,48 @@ private:
         std::smatch argsMatcher;
         std::regex argRegex(R"([0-9]+|"[^"]*")", std::regex_constants::extended);
 
+        while (std::regex_search(argsList, argsMatcher, argRegex)) {
+            // match the start of the arguments
+            std::string currentArg = argsMatcher[0];
+            args.push_back(currentArg);
+
+            // use the rest of the arguments
+            argsList = argsMatcher.suffix().str();
+        }
+
+        return std::make_pair(relName, args);
+    }
+
+    /**
+     * Parse tuple for query, split into relation name and args, additionally allow varaible as argument in
+     * relation tuple
+     * @param str The string to parse, should be in form "R(x1, x2, x3, ...)"
+     */
+    std::pair<std::string, std::vector<std::string>> parseQueryTuple(const std::string& str) {
+        std::string relName;
+        std::vector<std::string> args;
+        // regex for matching tuples
+        // values matches numbers or strings enclosed in quotation marks
+        std::regex relationRegex(
+                "([a-zA-Z0-9_.-]*)[[:blank:]]*\\(([[:blank:]]*([0-9]+|\"[^\"]*\"|[a-zA-Z_][a-zA-Z_0-9]*)([[:"
+                "blank:]]*,[[:blank:]]*(["
+                "0-"
+                "9]+|\"[^\"]*\"|[a-zA-Z_][a-zA-Z_0-9]*))*)?\\)",
+                std::regex_constants::extended);
+        std::smatch relMatch;
+
+        // if the given string does not match relationRegex, return a pair of empty string and empty vector
+        if (!std::regex_match(str, relMatch, relationRegex) || relMatch.size() < 3) {
+            return std::make_pair(relName, args);
+        }
+
+        // set relation name
+        relName = relMatch[1];
+
+        // extract each argument
+        std::string argsList = relMatch[2];
+        std::smatch argsMatcher;
+        std::regex argRegex(R"([0-9]+|"[^"]*"|[a-zA-Z_][a-zA-Z_0-9]*)", std::regex_constants::extended);
         while (std::regex_search(argsList, argsMatcher, argRegex)) {
             // match the start of the arguments
             std::string currentArg = argsMatcher[0];
@@ -290,7 +383,6 @@ public:
         while (true) {
             printPrompt("Enter command > ");
             std::string line = getInput();
-
             // a return value of false indicates that an exit/q command has been processed
             if (processCommand(line) == false) {
                 break;
@@ -313,7 +405,7 @@ private:
 
     /* Print a command prompt, disabled for non-terminal outputs */
     void printPrompt(const std::string& prompt) override {
-        if (!isatty(fileno(stdin))) {
+        if (isatty(fileno(stdin)) == 0) {
             return;
         }
         std::cout << prompt;
@@ -349,7 +441,7 @@ private:
 
     /* Print any other information, disabled for non-terminal outputs */
     void printInfo(const std::string& info) override {
-        if (!isatty(fileno(stdin))) {
+        if (isatty(fileno(stdin)) == 0) {
             return;
         }
         std::cout << info;
@@ -527,8 +619,8 @@ private:
 };
 #endif
 
-inline void explain(SouffleProgram& prog, bool ncurses = false) {
-    ExplainProvenanceImpl prov(prog);
+inline void explain(SouffleProgram& prog, bool ncurses, bool useSubtreelevels) {
+    ExplainProvenanceImpl prov(prog, useSubtreelevels);
 
     if (ncurses) {
 #ifdef USE_NCURSES

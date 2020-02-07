@@ -176,10 +176,11 @@ public:
         os << tab << "  \"children\": [\n";
         bool first = true;
         for (const std::unique_ptr<TreeNode>& k : children) {
-            if (first)
+            if (first) {
                 first = false;
-            else
+            } else {
                 os << ",\n";
+            }
             k->printJSON(os, pos + 1);
         }
         os << tab << "]\n";
@@ -196,7 +197,9 @@ private:
  */
 class LeafNode : public TreeNode {
 public:
-    LeafNode(const std::string& t = "") : TreeNode(t) {}
+    LeafNode(const std::string& t = "") : TreeNode(t) {
+        setSize(1);
+    }
 
     // place leaf node
     void place(uint32_t x, uint32_t y) override {

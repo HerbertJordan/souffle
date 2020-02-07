@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <set>
 #include <thread>
 #include <utility>
@@ -103,7 +104,7 @@ TEST(EqRelTest, Duplicates) {
     EXPECT_FALSE(br.contains(1, 1));
 
     // check iteration of duplicate is fine
-    ram::Tuple<RamDomain, 2> tup;
+    ram::Tuple<RamDomain, 2> tup{};
     tup[0] = 0;
     tup[1] = 0;
     auto x = br.begin();
@@ -189,7 +190,10 @@ TEST(EqRelTest, Shuffled) {
     for (size_t i = 0; i < N; i++) {
         data.push_back(i);
     }
-    std::random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     for (auto x : data) {
         br.insert(x, x);
@@ -279,7 +283,10 @@ TEST(EqRelTest, Merge) {
     for (int i = 0; i < N; i++) {
         data.push_back(i);
     }
-    random_shuffle(data.begin(), data.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data.begin(), data.end(), generator);
 
     for (int i = 0; i < N; i++) {
         br.insert(data[i], data[i]);
@@ -485,8 +492,8 @@ TEST(EqRelTest, IterPartition) {
     EXPECT_TRUE(chunks.size() > 0);
 
     for (auto chunk : chunks) {
-        for (auto x = chunk.begin(); x != chunk.end(); ++x) {
-            values.push_back(std::make_pair((*x)[0], (*x)[1]));
+        for (auto x : chunk) {
+            values.push_back(std::make_pair(x[0], x[1]));
         }
     }
 
@@ -504,8 +511,8 @@ TEST(EqRelTest, IterPartition) {
 
     chunks = br.partition(400);
     for (auto chunk : chunks) {
-        for (auto x = chunk.begin(); x != chunk.end(); ++x) {
-            values.push_back(std::make_pair((*x)[0], (*x)[1]));
+        for (auto x : chunk) {
+            values.push_back(std::make_pair(x[0], x[1]));
         }
     }
 
@@ -534,8 +541,11 @@ TEST(EqRelTest, ParallelScaling) {
     for (int i = 0; i < N; ++i) data1.push_back(i);
     for (int i = 0; i < N; ++i) data2.push_back(i);
 
-    std::random_shuffle(data1.begin(), data1.end());
-    std::random_shuffle(data2.begin(), data2.end());
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    shuffle(data1.begin(), data1.end(), generator);
+    shuffle(data2.begin(), data2.end(), generator);
 
     std::cout << "number of threads: " << omp_get_max_threads() << std::endl;
 

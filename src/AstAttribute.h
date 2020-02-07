@@ -42,41 +42,32 @@ public:
     AstAttribute(std::string n, AstTypeIdentifier t, const Type* /*type*/ = nullptr)
             : name(std::move(n)), typeName(std::move(t)) {}
 
-    const std::string& getAttributeName() const {
-        return name;
-    }
-
-    const AstTypeIdentifier& getTypeName() const {
-        return typeName;
-    }
-
-    void setTypeName(const AstTypeIdentifier& name) {
-        typeName = name;
-    }
-
     void print(std::ostream& os) const override {
         os << name << ":" << typeName;
     }
 
-    /** Creates a clone of this AST sub-structure */
+    /** get attribute name */
+    const std::string& getAttributeName() const {
+        return name;
+    }
+
+    /** get type name */
+    const AstTypeIdentifier& getTypeName() const {
+        return typeName;
+    }
+
+    /** set type name */
+    void setTypeName(const AstTypeIdentifier& name) {
+        typeName = name;
+    }
+
     AstAttribute* clone() const override {
         auto* res = new AstAttribute(name, typeName);
         res->setSrcLoc(getSrcLoc());
         return res;
     }
 
-    /** Mutates this node */
-    void apply(const AstNodeMapper& /*map*/) override {
-        // no nested AST nodes
-    }
-
-    /** Obtains a list of all embedded child nodes */
-    std::vector<const AstNode*> getChildNodes() const override {
-        return std::vector<const AstNode*>();
-    }
-
 protected:
-    /** Implements the node comparison for this node type */
     bool equal(const AstNode& node) const override {
         assert(nullptr != dynamic_cast<const AstAttribute*>(&node));
         const auto& other = static_cast<const AstAttribute&>(node);

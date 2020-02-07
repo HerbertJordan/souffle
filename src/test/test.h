@@ -16,19 +16,48 @@
 #pragma once
 #include "Util.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <random>
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace testutil {
+
+template <typename T>
+std::vector<T> generateRandomVector(const size_t vectorSize, const int seed = 3) {
+    std::vector<T> values(vectorSize);
+
+    std::default_random_engine randomGenerator(seed);
+
+    if constexpr (std::is_floating_point<T>::value) {
+        // For distribution bonds, following must hold:
+        // a ≤ b and b − a ≤ numeric_limits<RealType>::max()
+        // (in particular: if given values bounds, it will crash).
+        // TODO (darth_tytus): Investigate a better solution.
+        std::uniform_real_distribution<T> distribution(-1000, 1000);
+        std::generate(values.begin(), values.end(),
+                [&distribution, &randomGenerator]() { return distribution(randomGenerator); });
+        return values;
+    } else {
+        std::uniform_int_distribution<T> distribution(
+                std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max());
+        std::generate(values.begin(), values.end(),
+                [&distribution, &randomGenerator]() { return distribution(randomGenerator); });
+        return values;
+    }
+}
+
 // easy function to suppress unused var warnings (when we REALLY don't need to use them!)
 template <class T>
 void ignore(const T&) {}
 }  // namespace testutil
 
-/* singly linked list for linking test caes */
+/* singly linked list for linking test cases */
 
 static class TestCase* base = nullptr;
 
@@ -176,18 +205,10 @@ public:
 #define ASSERT_TRUE(a) fatal(a, #a, LOC)
 #define ASSERT_LE(a, b) fatal((a) <= (b), "LE(" #a "," #b ")", LOC)
 
-#ifdef USE_MPI
-#include <mpi.h>
-#endif
-
 /**
  * Main program of a unit test
  */
 int main(int argc, char** argv) {
-#ifdef USE_MPI
-    MPI_Init(&argc, &argv);
-#endif
-
     // add all groups to a set
     std::set<std::string> groups;
     for (TestCase* p = base; p != nullptr; p = p->nextTestCase()) {
@@ -211,10 +232,6 @@ int main(int argc, char** argv) {
             }
         }
     }
-
-#ifdef USE_MPI
-    MPI_Finalize();
-#endif
 
     if (failure != 0) {
         std::cerr << "Tests failed.\n";

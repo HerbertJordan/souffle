@@ -177,7 +177,7 @@ DebugReportSection DebugReporter::getDotGraphSection(
     std::stringstream data;
     while (in != nullptr) {
         char c = fgetc(in);
-        if (feof(in)) {
+        if (feof(in) != 0) {
             break;
         }
         data << c;

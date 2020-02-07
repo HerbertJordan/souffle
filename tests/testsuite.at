@@ -206,11 +206,9 @@ m4_define([NEGATIVE_TEST],[
 dnl Defines most relevant Souffle flag configurations for testing.
 dnl NOTE: This is the default configuration that can be overridden
 dnl using SOUFFLE_CONFS environment variable.
-m4_define([DEFAULT_CONFS], [[--interpreter RAMI],   dnl run RAM interpreter
+m4_define([DEFAULT_CONFS], [[],      dnl run default interpreter in sequential
   [-j8],                             dnl run interpreter in parallel
-  [-j8 --interpreter RAMI],          dnl run RAM Interpreter in parallel
-  [-c -j8],                          dnl compile, then execute in parallel
-  [-c -j8 -efile]                    dnl compile, then execute in parallel with file communication engine
+  [-c -j8]                           dnl compile, then execute in parallel
 ])
 
 dnl Store user-defined souffle flag configuration given by the SOUFFLE_CONFS env (if any)
@@ -246,6 +244,11 @@ m4_ifblank(m4_join([],ENV_CATEGORIES), [
 m4_foreach(current, [CATEGORIES],
 [
   AT_BANNER([current])
+  
+  m4_if(current, Swig, [
+    m4_include([swig.at])
+  ])
+
   m4_if(current, Syntactic, [
     m4_include([syntactic.at])
   ])

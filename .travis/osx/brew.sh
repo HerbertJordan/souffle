@@ -53,3 +53,6 @@ do
   git push
 done
 
+
+set +e
+set +x

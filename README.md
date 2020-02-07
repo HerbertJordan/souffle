@@ -1,7 +1,10 @@
 
 # [Soufflé](https://souffle-lang.github.io)
 
+[![License: UPL](https://img.shields.io/badge/License-UPL--1.0-blue.svg)](https://github.com/souffle-lang/souffle/blob/master/LICENSE)
 [![Build Status](https://travis-ci.org/souffle-lang/souffle.svg?branch=master)](https://travis-ci.org/souffle-lang/souffle)
+[![codecov](https://codecov.io/gh/souffle-lang/souffle/branch/master/graph/badge.svg)](https://codecov.io/gh/souffle-lang/souffle)
+
 
 Soufflé is a translator of Horn clauses into parallel C++. Soufflé language has similarities to Datalog, and is used as a domain-specific language for analysis problems. 
 
@@ -18,13 +21,13 @@ Use git to obtain the source code of Soufflé.
 
     $ git clone git://github.com/souffle-lang/souffle.git
     
-Build instructions can be found [here](http://souffle-lang.org/docs/build).     
+Build instructions can be found [here](https://souffle-lang.github.io/build).
 
-## [Home Page](http://souffle-lang.org)
+## [Home Page](https://souffle-lang.github.io)
 
-## [Documentation](http://souffle-lang.org/docs/home)
+## [Documentation](https://souffle-lang.github.io/docs.html)
 
-## [Contributors](http://souffle-lang.org/docs/contributors/)
+## [Contributors](https://souffle-lang.github.io/contributors)
 
 ## [Issues](https://github.com/souffle-lang/souffle/issues)
 

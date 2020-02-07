@@ -19,7 +19,8 @@ git fetch --tags --unshallow
 ./bootstrap
 ./configure --prefix=`pwd`/usr
 
-make -j2 install
+JOBS=$(nproc)
+make -j$JOBS install
 
 #libstdc++ > 4.8 is not sufficient for all of C++11 but 2018/4/2 it does compile
 #and all but provenance works.

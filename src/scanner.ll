@@ -35,7 +35,6 @@
     #include <cstring>
 
     #include "AstProgram.h"
-    #include "StringPool.h"
 
     #include "SrcLocation.h"
     #define YYLTYPE SrcLocation
@@ -44,10 +43,9 @@
     #include "RamTypes.h"
     #include "parser.hh"
 
-    #define register
+    #include "Util.h"
 
-    /* String Pool declarations */
-    StringPool::hashentry *StringPool::hashtab[HASH_SIZE];
+    #define register
 
 #define yylloc yyget_extra(yyscanner)->yylloc
 
@@ -88,6 +86,12 @@
 "land"                                { return yy::parser::make_L_AND(yylloc); }
 "lor"                                 { return yy::parser::make_L_OR(yylloc); }
 "lnot"                                { return yy::parser::make_L_NOT(yylloc); }
+"itou"                                { return yy::parser::make_ITOU(yylloc); }
+"itof"                                { return yy::parser::make_ITOF(yylloc); }
+"utoi"                                { return yy::parser::make_UTOI(yylloc); }
+"utof"                                { return yy::parser::make_UTOF(yylloc); }
+"ftoi"                                { return yy::parser::make_FTOI(yylloc); }
+"ftou"                                { return yy::parser::make_FTOU(yylloc); }
 "match"                               { return yy::parser::make_TMATCH(yylloc); }
 "cat"                                 { return yy::parser::make_CAT(yylloc); }
 "ord"                                 { return yy::parser::make_ORD(yylloc); }
@@ -139,7 +143,7 @@
 "<"                                   { return yy::parser::make_LT(yylloc); }
 ">"                                   { return yy::parser::make_GT(yylloc); }
 ":-"                                  { return yy::parser::make_IF(yylloc); }
-(!=|>=|<=)                            { return yy::parser::make_RELOP(SLOOKUP(yytext), yylloc); }
+(!=|>=|<=)                            { return yy::parser::make_RELOP(yytext, yylloc); }
 [0-9]+"."[0-9]+"."[0-9]+"."[0-9]+     {
                                         try {
                                         char *token = std::strtok(yytext, ".");
@@ -161,9 +165,17 @@
                                           return yy::parser::make_NUMBER(0, yylloc);
                                         }
                                       }
+[0-9]+[.][0-9]+                       {
+                                        try {
+                                          return yy::parser::make_FLOAT(souffle::RamFloatFromString(yytext), yylloc);
+                                        } catch (...) {
+                                          driver.error(yylloc, "float out of range");
+                                          return yy::parser::make_FLOAT(0, yylloc);
+                                        }
+                                      }
 0b[0-1][0-1]*                         {
                                         try {
-                                          return yy::parser::make_NUMBER((RamDomain)std::stoull(yytext+2, NULL, 2), yylloc);
+                                          return yy::parser::make_NUMBER(souffle::stord(yytext+2, nullptr, 2), yylloc);
                                         } catch(...) {
                                           driver.error(yylloc, "bool out of range");
                                           return yy::parser::make_NUMBER(0, yylloc);
@@ -171,7 +183,7 @@
                                       }
 0x[a-fA-F0-9]+                        {
                                         try {
-                                          return yy::parser::make_NUMBER((RamDomain)std::stoull(yytext+2, NULL, 16), yylloc);
+                                          return yy::parser::make_NUMBER(souffle::stord(yytext, nullptr, 16), yylloc);
                                         } catch(...) {
                                           driver.error(yylloc, "hex out of range");
                                           return yy::parser::make_NUMBER(0, yylloc);
@@ -179,32 +191,32 @@
                                       }
 0|([1-9][0-9]*)                       {
                                         try {
-                                          return yy::parser::make_NUMBER(std::stoull(yytext, NULL, 10), yylloc);
+                                          return yy::parser::make_NUMBER(souffle::stord(yytext, nullptr, 10), yylloc);
                                         } catch (...) {
                                           driver.error(yylloc, "int out of range");
                                           return yy::parser::make_NUMBER(0, yylloc);
                                         }
                                       }
 [\?a-zA-Z]|[_\?a-zA-Z][_\?a-zA-Z0-9]+ {
-                                        return yy::parser::make_IDENT(SLOOKUP(yytext), yylloc);
+                                        return yy::parser::make_IDENT(yytext, yylloc);
                                       }
 \"(\\.|[^"\\])*\"                     {
                                         yytext[strlen(yytext)-1]=0;
-                                        return yy::parser::make_STRING(SLOOKUP(&yytext[1]), yylloc);
+                                        return yy::parser::make_STRING(&yytext[1], yylloc);
                                       }
 \#.*$                                 {
                                         char fname[yyleng+1];
                                         int lineno;
-                                        if(sscanf(yytext,"# %d \"%s",&lineno,fname)>=2) {
+                                        if(sscanf(yytext,"# %d \"%[^\"]",&lineno,fname)>=2) {
                                           assert(strlen(fname) > 0 && "failed conversion");
-                                          fname[strlen(fname)-1]='\0';
+                                          fname[strlen(fname)]='\0';
                                           yycolumn = 1; yylineno = lineno-1;
-                                          yyfilename = SLOOKUP(fname);
-                                        } else if(sscanf(yytext,"#line %d \"%s",&lineno,fname)>=2) {
+                                          yyfilename = fname;
+                                        } else if(sscanf(yytext,"#line %d \"%[^\"]",&lineno,fname)>=2) {
                                           assert(strlen(fname) > 0 && "failed conversion");
-                                          fname[strlen(fname)-1]='\0';
+                                          fname[strlen(fname)]='\0';
                                           yycolumn = 1; yylineno = lineno-1;
-                                          yyfilename = SLOOKUP(fname);
+                                          yyfilename = fname;
                                         }
                                       }
 "//".*$                               { }

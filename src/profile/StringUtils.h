@@ -24,6 +24,8 @@
 #include <vector>
 #include <unistd.h>
 
+#include <sys/stat.h>
+
 namespace souffle {
 namespace profile {
 
@@ -32,8 +34,8 @@ namespace profile {
  * Mostly string manipulation
  */
 namespace Tools {
-static const std::string arr[] = {"K", "M", "B", "t", "q", "Q", "s", "S", "o", "n", "d", "U"};
-static const std::vector<std::string> abbreviations(arr, arr + sizeof(arr) / sizeof(arr[0]));
+static const std::vector<std::string> abbreviations{
+        "K", "M", "B", "t", "q", "Q", "s", "S", "o", "n", "d", "U"};
 
 inline std::string formatNum(double amount) {
     std::stringstream ss;
@@ -47,7 +49,7 @@ inline std::string formatNum(int precision, int64_t amount) {
         return "0";
     }
 
-    if (precision == -1) {
+    if (precision <= 0) {
         return std::to_string(amount);
     }
 
@@ -67,13 +69,7 @@ inline std::string formatNum(int precision, int64_t amount) {
 
         if (r >= 100) {  // 1000 > result >= 100
 
-            // not sure why anyone would do such a thing.
             switch (precision) {
-                case -1:
-                    break;
-                case 0:
-                    result = "0";
-                    break;  // I guess 0 would be valid?
                 case 1:
                     result = result.substr(0, 1) + "00";
                     break;
@@ -88,11 +84,6 @@ inline std::string formatNum(int precision, int64_t amount) {
             }
         } else if (r >= 10) {  // 100 > result >= 10
             switch (precision) {
-                case -1:
-                    break;
-                case 0:
-                    result = "0";
-                    break;  // I guess 0 precision would be valid?
                 case 1:
                     result = result.substr(0, 1) + "0";
                     break;
@@ -104,11 +95,6 @@ inline std::string formatNum(int precision, int64_t amount) {
             }
         } else {  // 10 > result > 0
             switch (precision) {
-                case -1:
-                    break;
-                case 0:
-                    result = "0";
-                    break;  // I guess 0 precision would be valid?
                 case 1:
                     result = result.substr(0, 1);
                     break;
@@ -119,7 +105,8 @@ inline std::string formatNum(int precision, int64_t amount) {
         result += abbreviations.at(i);
         return result;
     }
-    return nullptr;
+    // If we ever have integers too large to handle, fall back to this
+    return std::to_string(amount);
 }
 
 inline std::string formatMemory(uint64_t kbytes) {
@@ -186,68 +173,25 @@ inline std::vector<std::vector<std::string>> formatTable(Table table, int precis
     return result;
 }
 
-inline std::vector<std::string> split(std::string str, std::string split_str) {
-    // repeat value when splitting so "a   b" -> ["a","b"] not ["a","","","","b"]
-    bool repeat = (split_str.compare(" ") == 0);
+/** @brief split on the delimiter */
+inline std::vector<std::string> split(std::string toSplit, std::string delimiter) {
+    std::vector<std::string> elements;
+    std::string::size_type lastPos = 0;
+    auto pos = toSplit.find(delimiter, lastPos);
 
-    std::vector<std::string> elems;
-
-    std::string temp;
-    std::string hold;
-    for (size_t i = 0; i < str.size(); i++) {
-        if (repeat) {
-            if (str.at(i) == split_str.at(0)) {
-                while (str.at(++i) == split_str.at(0))
-                    ;  // set i to be at the end of the search string
-                elems.push_back(temp);
-                temp = "";
-            }
-            temp += str.at(i);
-        } else {
-            temp += str.at(i);
-            hold += str.at(i);
-            for (size_t j = 0; j < hold.size(); j++) {
-                if (hold[j] != split_str[j]) {
-                    hold = "";
-                }
-            }
-            if (hold.size() == split_str.size()) {
-                elems.push_back(temp.substr(0, temp.size() - hold.size()));
-                hold = "";
-                temp = "";
-            }
+    while (pos != std::string::npos) {
+        if (pos > 0) {
+            std::string newElement = toSplit.substr(lastPos, pos - lastPos);
+            elements.push_back(newElement);
         }
+        lastPos = pos + delimiter.size();
+        pos = toSplit.find(delimiter, lastPos);
     }
-    if (!temp.empty()) {
-        elems.push_back(temp);
+    if (lastPos < toSplit.size()) {
+        elements.push_back(toSplit.substr(lastPos));
     }
 
-    return elems;
-}
-
-inline std::vector<std::string> splitAtSemiColon(std::string str) {
-    for (size_t i = 0; i < str.size(); i++) {
-        if (i > 0 && str[i] == ';' && str[i - 1] == '\\') {
-            // I'm assuming this isn't a thing that will be naturally found in souffle profiler files
-            str[i - 1] = '\b';
-            str.erase(i--, 1);
-        }
-    }
-    bool changed = false;
-    std::vector<std::string> result = split(str, ";");
-    for (auto& i : result) {
-        for (char& j : i) {
-            if (j == '\b') {
-                j = ';';
-                changed = true;
-            }
-        }
-        if (changed) {
-            changed = false;
-        }
-    }
-
-    return result;
+    return elements;
 }
 
 inline std::string trimWhitespace(std::string str) {
@@ -265,10 +209,15 @@ inline std::string trimWhitespace(std::string str) {
 }
 
 inline bool file_exists(const std::string& name) {
-    std::ifstream f(name.c_str());
-    return f.good();
+    struct stat buffer = {};
+    if (stat(name.c_str(), &buffer) == 0) {
+        if ((buffer.st_mode & S_IFMT) != 0) {
+            return true;
+        }
+    }
+    return false;
 }
-
+/** @brief Remove \n and \t characters, \n and \t sequence of two chars, and wrapping quotes */
 inline std::string cleanString(std::string val) {
     if (val.size() < 2) {
         return val;
@@ -293,43 +242,29 @@ inline std::string cleanString(std::string val) {
 
     return val;
 }
-inline std::string cleanJsonOut(std::string val) {
-    if (val.size() < 2) {
-        return val;
-    }
 
-    if (val.at(0) == '"' && val.at(val.size() - 1) == '"') {
-        val = val.substr(1, val.size() - 2);
+/** @brief escape escapes and quotes, and remove surrounding quotes */
+inline std::string cleanJsonOut(std::string value) {
+    if (value.size() >= 2) {
+        if (value.at(0) == '"' && value.at(value.size() - 1) == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
     }
 
     size_t start_pos = 0;
-    while ((start_pos = val.find('\\', start_pos)) != std::string::npos) {
-        val.replace(start_pos, 1, "\\\\");
+    while ((start_pos = value.find('\\', start_pos)) != std::string::npos) {
+        value.replace(start_pos, 1, "\\\\");
         start_pos += 2;
     }
     start_pos = 0;
-    while ((start_pos = val.find('"', start_pos)) != std::string::npos) {
-        val.replace(start_pos, 1, "\\\"");
+    while ((start_pos = value.find('"', start_pos)) != std::string::npos) {
+        value.replace(start_pos, 1, "\\\"");
         start_pos += 2;
     }
-    return val;
+    return value;
 }
-inline std::string escapeQuotes(std::string val) {
-    if (val.size() < 2) {
-        return val;
-    }
 
-    if (val.at(0) == '"' && val.at(val.size() - 1) == '"') {
-        val = val.substr(1, val.size() - 2);
-    }
-
-    size_t start_pos = 0;
-    while ((start_pos = val.find('"', start_pos)) != std::string::npos) {
-        val.replace(start_pos, 1, "\\\"");
-        start_pos += 2;
-    }
-    return val;
-}
+/** @brief Convert doubles to NaN or scientific notation */
 inline std::string cleanJsonOut(double val) {
     if (std::isnan(val)) {
         return "NaN";
@@ -337,13 +272,6 @@ inline std::string cleanJsonOut(double val) {
     std::ostringstream ss;
     ss << std::scientific << std::setprecision(6) << val;
     return ss.str();
-}
-
-inline std::string stripWhitespace(std::string val) {
-    size_t first = val.find_first_not_of(' ');
-    if (first == std::string::npos) return "";
-    size_t last = val.find_last_not_of(' ');
-    return val.substr(first, (last - first + 1));
 }
 }  // namespace Tools
 

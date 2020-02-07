@@ -24,8 +24,8 @@
 #include "SymbolTable.h"
 
 #include <algorithm>
+#include <queue>
 #include <sstream>
-#include <stack>
 #include <string>
 
 #include <cstdlib>
@@ -49,8 +49,6 @@ public:
  */
 class RamTrue : public RamCondition {
 public:
-    RamTrue() = default;
-
     void print(std::ostream& os) const override {
         os << "true";
     }
@@ -60,10 +58,6 @@ public:
     }
 };
 
-inline bool isRamTrue(const RamCondition* cond) {
-    return nullptr != dynamic_cast<const RamTrue*>(cond);
-}
-
 /**
  * @class RamTrue
  * @brief False value condition
@@ -72,8 +66,6 @@ inline bool isRamTrue(const RamCondition* cond) {
  */
 class RamFalse : public RamCondition {
 public:
-    RamFalse() = default;
-
     void print(std::ostream& os) const override {
         os << "false";
     }
@@ -100,26 +92,23 @@ public:
 class RamConjunction : public RamCondition {
 public:
     RamConjunction(std::unique_ptr<RamCondition> l, std::unique_ptr<RamCondition> r)
-            : lhs(std::move(l)), rhs(std::move(r)) {}
+            : lhs(std::move(l)), rhs(std::move(r)) {
+        assert(lhs != nullptr && "left-hand side of conjunction is a nullptr");
+        assert(rhs != nullptr && "right-hand side of conjunction is a nullptr");
+    }
 
     /** @brief Get left-hand side of conjunction */
     const RamCondition& getLHS() const {
-        assert(lhs != nullptr && "left-hand side of conjunction is a nullptr");
         return *lhs;
     }
 
     /** @brief Get right-hand side of conjunction */
     const RamCondition& getRHS() const {
-        assert(rhs != nullptr && "right-hand side of conjunction is a nullptr");
         return *rhs;
     }
 
     void print(std::ostream& os) const override {
-        os << "(";
-        lhs->print(os);
-        os << " AND ";
-        rhs->print(os);
-        os << ")";
+        os << "(" << *lhs << " AND " << *rhs << ")";
     }
 
     std::vector<const RamNode*> getChildNodes() const override {
@@ -134,20 +123,22 @@ public:
     void apply(const RamNodeMapper& map) override {
         lhs = map(std::move(lhs));
         rhs = map(std::move(rhs));
+        assert(lhs != nullptr && "left-hand side of conjunction is a nullptr");
+        assert(rhs != nullptr && "right-hand side of conjunction is a nullptr");
     }
 
 protected:
-    /** Left-hand side of conjunction */
-    std::unique_ptr<RamCondition> lhs;
-
-    /** Right-hand side of conjunction */
-    std::unique_ptr<RamCondition> rhs;
-
     bool equal(const RamNode& node) const override {
         assert(nullptr != dynamic_cast<const RamConjunction*>(&node));
         const auto& other = static_cast<const RamConjunction&>(node);
         return getLHS() == other.getLHS() && getRHS() == other.getRHS();
     }
+
+    /** Left-hand side of conjunction */
+    std::unique_ptr<RamCondition> lhs;
+
+    /** Right-hand side of conjunction */
+    std::unique_ptr<RamCondition> rhs;
 };
 
 /**
@@ -161,18 +152,17 @@ protected:
  */
 class RamNegation : public RamCondition {
 public:
-    RamNegation(std::unique_ptr<RamCondition> operand) : operand(std::move(operand)) {}
+    RamNegation(std::unique_ptr<RamCondition> op) : operand(std::move(op)) {
+        assert(nullptr != operand && "operand of negation is a null-pointer");
+    }
 
     /** @brief Get operand of negation */
     const RamCondition& getOperand() const {
-        assert(nullptr != operand && "operand of negation is a null-pointer");
         return *operand;
     }
 
     void print(std::ostream& os) const override {
-        os << "(NOT ";
-        operand->print(os);
-        os << ")";
+        os << "(NOT " << *operand << ")";
     }
 
     std::vector<const RamNode*> getChildNodes() const override {
@@ -185,17 +175,18 @@ public:
 
     void apply(const RamNodeMapper& map) override {
         operand = map(std::move(operand));
+        assert(nullptr != operand && "operand of negation is a null-pointer");
     }
 
 protected:
-    /** Operand */
-    std::unique_ptr<RamCondition> operand;
-
     bool equal(const RamNode& node) const override {
         assert(nullptr != dynamic_cast<const RamNegation*>(&node));
         const auto& other = static_cast<const RamNegation&>(node);
         return getOperand() == other.getOperand();
     }
+
+    /** Operand */
+    std::unique_ptr<RamCondition> operand;
 };
 
 /**
@@ -214,25 +205,24 @@ protected:
 class RamConstraint : public RamCondition {
 public:
     RamConstraint(BinaryConstraintOp op, std::unique_ptr<RamExpression> l, std::unique_ptr<RamExpression> r)
-            : op(op), lhs(std::move(l)), rhs(std::move(r)) {}
+            : op(op), lhs(std::move(l)), rhs(std::move(r)) {
+        assert(lhs != nullptr && "left-hand side of constraint is a null-pointer");
+        assert(rhs != nullptr && "right-hand side of constraint is a null-pointer");
+    }
 
     void print(std::ostream& os) const override {
-        os << "(";
-        lhs->print(os);
-        os << " " << toBinaryConstraintSymbol(op) << " ";
-        rhs->print(os);
-        os << ")";
+        os << "(" << *lhs << " ";
+        os << toBinaryConstraintSymbol(op);
+        os << " " << *rhs << ")";
     }
 
     /** @brief Get left-hand side */
     const RamExpression& getLHS() const {
-        assert(lhs != nullptr && "left-hand side of constraint is a null-pointer");
         return *lhs;
     }
 
     /** @brief Get right-hand side */
     const RamExpression& getRHS() const {
-        assert(rhs != nullptr && "right-hand side of constraint is a null-pointer");
         return *rhs;
     }
 
@@ -253,9 +243,19 @@ public:
     void apply(const RamNodeMapper& map) override {
         lhs = map(std::move(lhs));
         rhs = map(std::move(rhs));
+        assert(lhs != nullptr && "left-hand side of constraint is a null-pointer");
+        assert(rhs != nullptr && "right-hand side of constraint is a null-pointer");
     }
 
 protected:
+    /** Operator */
+    bool equal(const RamNode& node) const override {
+        assert(nullptr != dynamic_cast<const RamConstraint*>(&node));
+        const auto& other = static_cast<const RamConstraint&>(node);
+        return getOperator() == other.getOperator() && getLHS() == other.getLHS() &&
+               getRHS() == other.getRHS();
+    }
+
     /** Operator */
     BinaryConstraintOp op;
 
@@ -264,13 +264,6 @@ protected:
 
     /** Right-hand side of constraint */
     std::unique_ptr<RamExpression> rhs;
-
-    bool equal(const RamNode& node) const override {
-        assert(nullptr != dynamic_cast<const RamConstraint*>(&node));
-        const auto& other = static_cast<const RamConstraint&>(node);
-        return getOperator() == other.getOperator() && getLHS() == other.getLHS() &&
-               getRHS() == other.getRHS();
-    }
 };
 
 /**
@@ -281,16 +274,38 @@ class RamAbstractExistenceCheck : public RamCondition {
 public:
     RamAbstractExistenceCheck(
             std::unique_ptr<RamRelationReference> relRef, std::vector<std::unique_ptr<RamExpression>> vals)
-            : relationRef(std::move(relRef)), values(std::move(vals)) {}
+            : relationRef(std::move(relRef)), values(std::move(vals)) {
+        assert(relationRef != nullptr && "Relation reference is a nullptr");
+        for (const auto& v : values) {
+            assert(v != nullptr && "value is a nullptr");
+        }
+    }
 
     /** @brief Get relation */
     const RamRelation& getRelation() const {
         return *relationRef->get();
     }
 
-    /** @brief Get arguments of the tuple/pattern */
-    std::vector<RamExpression*> getValues() const {
+    /**
+     *  @brief Get arguments of the tuple/pattern
+     *  A null pointer element in the vector denotes an unspecified
+     *  pattern for a tuple element.
+     */
+    const std::vector<RamExpression*> getValues() const {
         return toPtrVector(values);
+    }
+
+    void print(std::ostream& os) const override {
+        os << "("
+           << join(values, ",",
+                      [](std::ostream& out, const std::unique_ptr<RamExpression>& value) {
+                          if (!value) {
+                              out << "_";
+                          } else {
+                              out << *value;
+                          }
+                      })
+           << ") ∈ " << getRelation().getName();
     }
 
     std::vector<const RamNode*> getChildNodes() const override {
@@ -305,21 +320,23 @@ public:
         relationRef = map(std::move(relationRef));
         for (auto& val : values) {
             val = map(std::move(val));
+            assert(val != nullptr && "value is a nullptr");
         }
+        assert(relationRef != nullptr && "Relation reference is a nullptr");
     }
 
 protected:
-    /** Relation */
-    std::unique_ptr<RamRelationReference> relationRef;
-
-    /** Pattern -- nullptr if undefined */
-    std::vector<std::unique_ptr<RamExpression>> values;
-
     bool equal(const RamNode& node) const override {
         assert(nullptr != dynamic_cast<const RamAbstractExistenceCheck*>(&node));
         const auto& other = static_cast<const RamAbstractExistenceCheck&>(node);
         return getRelation() == other.getRelation() && equal_targets(values, other.values);
     }
+
+    /** Relation */
+    std::unique_ptr<RamRelationReference> relationRef;
+
+    /** Pattern -- nullptr if undefined */
+    std::vector<std::unique_ptr<RamExpression>> values;
 };
 
 /**
@@ -339,19 +356,6 @@ public:
     RamExistenceCheck(
             std::unique_ptr<RamRelationReference> relRef, std::vector<std::unique_ptr<RamExpression>> vals)
             : RamAbstractExistenceCheck(std::move(relRef), std::move(vals)) {}
-
-    void print(std::ostream& os) const override {
-        os << "("
-           << join(values, ",",
-                      [](std::ostream& out, const std::unique_ptr<RamExpression>& value) {
-                          if (!value) {
-                              out << "_";
-                          } else {
-                              out << *value;
-                          }
-                      })
-           << ") ∈ " << getRelation().getName();
-    }
 
     RamExistenceCheck* clone() const override {
         std::vector<std::unique_ptr<RamExpression>> newValues;
@@ -374,16 +378,8 @@ public:
             : RamAbstractExistenceCheck(std::move(relRef), std::move(vals)) {}
 
     void print(std::ostream& os) const override {
-        os << "("
-           << join(values, ",",
-                      [](std::ostream& out, const std::unique_ptr<RamExpression>& value) {
-                          if (!value) {
-                              out << "_";
-                          } else {
-                              out << *value;
-                          }
-                      })
-           << ") prov∈ " << getRelation().getName();
+        os << "prov";
+        RamAbstractExistenceCheck::print(os);
     }
 
     RamProvenanceExistenceCheck* clone() const override {
@@ -409,7 +405,9 @@ public:
  */
 class RamEmptinessCheck : public RamCondition {
 public:
-    RamEmptinessCheck(std::unique_ptr<RamRelationReference> relRef) : relationRef(std::move(relRef)) {}
+    RamEmptinessCheck(std::unique_ptr<RamRelationReference> relRef) : relationRef(std::move(relRef)) {
+        assert(relationRef != nullptr && "Relation reference is a nullptr");
+    }
 
     /** @brief Get relation */
     const RamRelation& getRelation() const {
@@ -430,65 +428,18 @@ public:
 
     void apply(const RamNodeMapper& map) override {
         relationRef = map(std::move(relationRef));
+        assert(relationRef != nullptr && "Relation reference is a nullptr");
     }
 
 protected:
-    /** Relation */
-    std::unique_ptr<RamRelationReference> relationRef;
-
     bool equal(const RamNode& node) const override {
         assert(nullptr != dynamic_cast<const RamEmptinessCheck*>(&node));
         const auto& other = static_cast<const RamEmptinessCheck&>(node);
         return getRelation() == other.getRelation();
     }
+
+    /** Relation */
+    std::unique_ptr<RamRelationReference> relationRef;
 };
-
-/**
- * @brief Convert terms of a conjunction to a list
- * @param A RAM condition
- * @param A list of RAM conditions
- *
- * Convert a condition of the format C1 /\ C2 /\ ... /\ Cn
- * to a list {C1, C2, ..., Cn}.
- */
-inline std::vector<std::unique_ptr<RamCondition>> toConjunctionList(const RamCondition* condition) {
-    std::vector<std::unique_ptr<RamCondition>> list;
-    std::stack<const RamCondition*> stack;
-    if (condition != nullptr) {
-        stack.push(condition);
-        while (!stack.empty()) {
-            condition = stack.top();
-            stack.pop();
-            if (const auto* ramConj = dynamic_cast<const RamConjunction*>(condition)) {
-                stack.push(&ramConj->getLHS());
-                stack.push(&ramConj->getRHS());
-            } else {
-                list.emplace_back(condition->clone());
-            }
-        }
-    }
-    return list;
-}
-
-/**
- * @brief Convert list of conditions to a conjunction
- * @param A list of RAM conditions
- * @param A RAM condition
- *
- * Convert a list {C1, C2, ..., Cn} to a condition of
- * the format C1 /\ C2 /\ ... /\ Cn.
- */
-inline std::unique_ptr<RamCondition> toCondition(const std::vector<const RamCondition*>& list) {
-    std::unique_ptr<RamCondition> result;
-    for (const RamCondition* cur : list) {
-        if (result == nullptr) {
-            result = std::unique_ptr<RamCondition>(cur->clone());
-        } else {
-            result = std::make_unique<RamConjunction>(
-                    std::move(result), std::unique_ptr<RamCondition>(cur->clone()));
-        }
-    }
-    return result;
-}
 
 }  // end of namespace souffle

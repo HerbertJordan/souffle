@@ -215,6 +215,8 @@ public:
 
 private:
     bool transform(AstTranslationUnit& translationUnit) override;
+    bool transformMaxHeight(AstTranslationUnit& translationUnit);
+    bool transformSubtreeHeights(AstTranslationUnit& translationUnit);
 };
 
 /**
@@ -292,6 +294,21 @@ private:
 };
 
 /**
+ * Transformation pass to replace unnamed variables
+ * with singletons.
+ * E.g.: a() :- b(_). -> a() :- b(x).
+ */
+class NameUnnamedVariablesTransformer : public AstTransformer {
+public:
+    std::string getName() const override {
+        return "NameUnnamedVariablesTransformer";
+    }
+
+private:
+    bool transform(AstTranslationUnit& translationUnit) override;
+};
+
+/**
  * Transformation pass to reorder body literals.
  */
 class ReorderLiteralsTransformer : public AstTransformer {
@@ -312,6 +329,22 @@ class NormaliseConstraintsTransformer : public AstTransformer {
 public:
     std::string getName() const override {
         return "NormaliseConstraintsTransformer";
+    }
+
+private:
+    bool transform(AstTranslationUnit& translationUnit) override;
+};
+
+/**
+ * Transformation pass to remove expressions of the form
+ * sum k : { ... } and replace them with
+ * k * count : { ... }
+ * where k is a constant.
+ */
+class RemoveRedundantSumsTransformer : public AstTransformer {
+public:
+    std::string getName() const override {
+        return "RemoveRedundantSumsTransformer";
     }
 
 private:
@@ -519,6 +552,22 @@ public:
 
 private:
     std::unique_ptr<AstTransformer> transformer;
+    bool transform(AstTranslationUnit& translationUnit) override;
+};
+
+/**
+ * Transformation pass to determine operator types for polymorphic
+ * operators.
+ * Operators = Functors (plus, minus...) ∪ binary constraints (>, ≥ ...)
+ */
+
+class PolymorphicOperatorsTransformer : public AstTransformer {
+public:
+    std::string getName() const override {
+        return "PolymorphicOperatorsTransformer";
+    }
+
+private:
     bool transform(AstTranslationUnit& translationUnit) override;
 };
 

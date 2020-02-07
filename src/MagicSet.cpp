@@ -23,6 +23,7 @@
 #include "AstRelation.h"
 #include "AstTransforms.h"
 #include "AstTranslationUnit.h"
+#include "AstUtils.h"
 #include "BinaryConstraintOps.h"
 #include "Global.h"
 #include "IODirectives.h"
@@ -41,7 +42,7 @@ class SymbolTable;
 // checks whether the adorned version of two predicates is equal
 bool isEqualAdornment(const AstRelationIdentifier& pred1, const std::string& adorn1,
         const AstRelationIdentifier& pred2, const std::string& adorn2) {
-    return ((pred1 == pred2) && (adorn1.compare(adorn2) == 0));
+    return ((pred1 == pred2) && (adorn1 == adorn2));
 }
 
 // checks whether an element is contained within a set
@@ -63,7 +64,7 @@ bool contains(std::set<AdornedPredicate> adornedPredicates, const AstRelationIde
 
 // checks whether a string begins with a given string
 bool hasPrefix(const std::string& str, const std::string& prefix) {
-    if (str.substr(0, prefix.size()).compare(prefix) == 0) {
+    if (str.substr(0, prefix.size()) == prefix) {
         return true;
     }
     return false;
@@ -160,11 +161,11 @@ bool isBindingConstraint(AstArgument* lhs, AstArgument* rhs, std::set<std::strin
     std::string rhs_name = getString(rhs);
 
     // only want to check variables we have not bound yet
-    if (dynamic_cast<AstVariable*>(lhs) && (boundArgs.find(lhs_name) == boundArgs.end())) {
+    if ((dynamic_cast<AstVariable*>(lhs) != nullptr) && (boundArgs.find(lhs_name) == boundArgs.end())) {
         // return true if the rhs is a bound variable or a constant
-        if (dynamic_cast<AstVariable*>(rhs) && (boundArgs.find(rhs_name) != boundArgs.end())) {
+        if ((dynamic_cast<AstVariable*>(rhs) != nullptr) && (boundArgs.find(rhs_name) != boundArgs.end())) {
             return true;
-        } else if (dynamic_cast<AstConstant*>(rhs)) {
+        } else if (dynamic_cast<AstConstant*>(rhs) != nullptr) {
             return true;
         }
     }
@@ -739,7 +740,7 @@ void Adornment::run(const AstTranslationUnit& translationUnit) {
         // check whether edb or idb
         bool is_edb = true;
         for (AstClause* clause : rel->getClauses()) {
-            if (!clause->isFact()) {
+            if (!isFact(*clause)) {
                 is_edb = false;
                 break;
             }
@@ -809,7 +810,7 @@ void Adornment::run(const AstTranslationUnit& translationUnit) {
             // go through and adorn all IDB clauses defining the relation
             AstRelation* rel = program->getRelation(currPredicate.getName());
             for (AstClause* clause : rel->getClauses()) {
-                if (clause->isFact()) {
+                if (isFact(*clause)) {
                     continue;
                 }
 
@@ -924,7 +925,7 @@ void separateDBs(AstProgram* program) {
         bool is_idb = false;
 
         for (AstClause* clause : relation->getClauses()) {
-            if (clause->isFact()) {
+            if (isFact(*clause)) {
                 is_edb = true;
             } else {
                 is_idb = true;
@@ -944,7 +945,7 @@ void separateDBs(AstProgram* program) {
 
             // find all facts for the relation
             for (AstClause* clause : relation->getClauses()) {
-                if (clause->isFact()) {
+                if (isFact(*clause)) {
                     // clause is fact - add it to the new EDB relation
                     AstClause* newEdbClause = clause->clone();
                     newEdbClause->getHead()->setName(newEdbName);
@@ -1000,7 +1001,7 @@ AstArgument* extractConstant(SymbolTable& symbolTable, const std::string& normal
         return new AstStringConstant(symbolTable, stringRep);
     } else if (indicatorChar == 'n') {
         // numeric argument
-        return new AstNumberConstant(stoi(stringRep));
+        return new AstNumberConstant(static_cast<RamDomain>(stoll(stringRep)));
     } else {
         // invalid format
         return nullptr;
@@ -1185,7 +1186,7 @@ bool MagicSetTransformer::transform(AstTranslationUnit& translationUnit) {
             // set the name of each IDB pred in the clause to be the adorned version
             int atomsSeen = 0;
             for (AstLiteral* lit : newClause->getBodyLiterals()) {
-                if (dynamic_cast<AstAtom*>(lit)) {
+                if (dynamic_cast<AstAtom*>(lit) != nullptr) {
                     auto* bodyAtom = dynamic_cast<AstAtom*>(lit);
                     AstRelationIdentifier atomName = bodyAtom->getName();
                     // note that all atoms in the original clause were adorned,
@@ -1214,7 +1215,7 @@ bool MagicSetTransformer::transform(AstTranslationUnit& translationUnit) {
                 AstLiteral* currentLiteral = body[i];
 
                 // only care about atoms in the body
-                if (dynamic_cast<AstAtom*>(currentLiteral)) {
+                if (dynamic_cast<AstAtom*>(currentLiteral) != nullptr) {
                     auto* atom = dynamic_cast<AstAtom*>(currentLiteral);
                     AstRelationIdentifier atomName = atom->getName();
 
